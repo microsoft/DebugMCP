@@ -41,6 +41,95 @@ export class DebugMCPServer {
     private initialized: boolean = false;
     private readonly numNextLines: number = 3;
 
+    // Structured instruction data as described in the refactor document
+    private readonly debugInstructions = {
+        instructions: {
+            title: "DebugMCP Instructions Guide",
+            content:`⚠️  CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:
+1. FIRST: Use 'add_breakpoint' to set an initial breakpoint at a starting point
+2. THEN: Use 'start_debugging' tool to start debugging
+3. FINALLY: Use step_over, step_into, add_breakpoint, continue_execution, get_variables_values to navigate and inspect step by step
+
+📋 DETAILED INSTRUCTIONS:
+- Before debugging: Set at least one breakpoint in your code
+- Start debugging: Launch the debug session with proper configuration
+- Navigate: Use stepping commands to move through code execution
+- Inspect: Check variables and evaluate expressions when needed
+- Continue: Use continue_execution to run until next breakpoint
+
+❌ COMMON MISTAKE: Starting debugging without breakpoints
+✅ BEST PRACTICE: Always set an initial breakpoint before starting debugging`
+        },
+        breakpoints: {
+            title: "Breakpoint Strategy Guide", 
+            content: `🎯 BREAKPOINT STRATEGY:
+- Set breakpoints inside the function body and not on the signature line itself
+- Set breakpoints before loops or conditionals  
+- Set breakpoints at variable assignments you want to inspect
+- Set breakpoints at error-prone areas
+
+📍 BEST PRACTICES:
+- Place breakpoints on executable lines (avoid comments, empty lines)
+- Set breakpoints at the start of functions to inspect parameters
+- Use conditional breakpoints for loops that iterate many times
+- Set breakpoints before and after critical operations
+- Avoid setting breakpoints on function signature lines`
+        },
+        troubleshooting: {
+            title: "Debugging Troubleshooting Guide",
+            content: `🔧 COMMON ISSUES & SOLUTIONS:
+
+1. Debug session won't start:
+   - Ensure proper language extension is installed
+   - Check that file path is correct and accessible
+   - Verify workspace folder is set
+
+2. Breakpoints not hit:
+   - Ensure breakpoints are on executable lines
+   - Check that code path is actually executed
+   - Verify breakpoints are enabled
+
+3. Variables not showing:
+   - Make sure execution is paused at breakpoint
+   - Check that variables are in current scope
+   - Try different scope options (local/global/all)
+
+4. Step commands not working:
+   - Ensure debug session is active and paused
+   - Check that current line has executable code
+   - Try continue_execution if stepping fails`
+        },
+        languages: {
+            python: {
+                title: "Python Debugging Tips",
+                content: `🐍 PYTHON-SPECIFIC GUIDANCE:
+- Use Python debugger extension
+- Set breakpoints inside function bodies
+- Check virtual environment activation
+- Use 'python' debug configuration type
+- Common file extensions: .py`
+            },
+            javascript: {
+                title: "JavaScript Debugging Tips", 
+                content: `🟨 JAVASCRIPT-SPECIFIC GUIDANCE:
+- Use Node.js debugger for server-side JS
+- Use browser debugger for client-side JS
+- Set breakpoints in .js, .ts, .jsx, .tsx files
+- Use 'pwa-node' debug configuration type
+- Check that Node.js is installed`
+            },
+            java: {
+                title: "Java Debugging Tips",
+                content: `☕ JAVA-SPECIFIC GUIDANCE:
+- Use Java Extension Pack
+- Ensure Java is compiled before debugging
+- Set breakpoints in .java files
+- Use 'java' debug configuration type
+- Check JAVA_HOME environment variable`
+            }
+        }
+    };
+
     constructor() {
         // Initialization will happen in initialize() method
     }
@@ -58,6 +147,7 @@ export class DebugMCPServer {
         });
 
         this.setupTools();
+        this.setupResources();
         this.initialized = true;
     }
 
@@ -65,22 +155,7 @@ export class DebugMCPServer {
         // Start debugging tool
         this.server.addTool({
             name: 'start_debugging',
-            description: `Start a debug session for a source code file.
-
-        ⚠️  CRITICAL WORKFLOW - FOLLOW THESE STEPS:
-        1. FIRST: Use 'add_breakpoint' to set an initial breakpoint at a starting point
-        2. THEN: Use this tool to start debugging
-        3. FINALLY: Use step_over, step_into, add_breakpoint, continue_execution, get_variables_values to navigate and inspect step by step
-
-        🎯 BREAKPOINT STRATEGY:
-        - Set breakpoints inside the function body and not on the signature line itself
-        - Set breakpoints before loops or conditionals  
-        - Set breakpoints at variable assignments you want to inspect
-        - Set breakpoints at error-prone areas
-
-        ❌ COMMON MISTAKE: Starting debugging without breakpoints
-        ✅ BEST PRACTICE: Always set an initial breakpoint before starting debugging`,
-        
+            description: 'Start a debug session for a source code file. Before using this tool, make sure to read debugmcp://docs/debug_instructions for step-by-step instructions and debugmcp://docs/breakpoints for breakpoint strategies.',
             parameters: z.object({
                 filePath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().optional().describe('Working directory for the debug session (optional)'),
@@ -150,14 +225,14 @@ export class DebugMCPServer {
         // Add breakpoint tool
         this.server.addTool({
             name: 'add_breakpoint',
-            description: 'Add a breakpoint at a specific code line. Ensure the line is inside a function body, not on the function signature line.',
+            description: 'Add a breakpoint at a specific code line. See debugmcp://docs/breakpoints for breakpoint strategies.',
             parameters: z.object({
-                filePath: z.string().describe('Full path to the file'),
+                fileFullPath: z.string().describe('Full path to the file'),
                 line: z.string().describe('Line content'),
             }),
-            execute: async (args: { filePath: string; line: string }) => {
+            execute: async (args: { fileFullPath: string; line: string }) => {
                 // find the line number containing the line content
-                const document = await vscode.workspace.openTextDocument(vscode.Uri.file(args.filePath));
+                const document = await vscode.workspace.openTextDocument(vscode.Uri.file(args.fileFullPath));
                 const text = document.getText();
                 const lines = text.split(/\r?\n/);
                 let lineNumber = -1;
@@ -176,10 +251,10 @@ export class DebugMCPServer {
             name: 'remove_breakpoint',
             description: 'Remove a breakpoint from a specific line',
             parameters: z.object({
-                filePath: z.string().describe('Full path to the file'),
+                fileFullPath: z.string().describe('Full path to the file'),
                 line: z.number().describe('Line number (1-based)'),
             }),
-            execute: async (args: { filePath: string; line: number }) => {
+            execute: async (args: { fileFullPath: string; line: number }) => {
                 return await this.handleRemoveBreakpoint(args);
             },
         });
@@ -215,6 +290,107 @@ export class DebugMCPServer {
             execute: async (args: { expression: string }) => {
                 return await this.handleEvaluateExpression(args);
             },
+        });
+    }
+
+    private setupResources() {
+        // Store reference to this for arrow functions
+        const debugInstructions = this.debugInstructions;
+        
+        // Add MCP resources for debugging documentation
+        this.server.addResource({
+            uri: 'debugmcp://docs/debug_instructions',
+            name: 'Debugging Instructions Guide',
+            description: 'Step-by-step instructions for debugging with DebugMCP',
+            mimeType: 'text/markdown',
+            async load() {
+                try {
+                    const title = debugInstructions.instructions.title;
+                    const content = debugInstructions.instructions.content;
+                    const fullContent = `# ${title}\n\n${content}`;
+                    console.log('debug_instructions content length:', fullContent.length);
+                    console.log('debug_instructions content preview:', fullContent.substring(0, 100));
+                    
+                    return {
+                        text: fullContent
+                    };
+                } catch (error) {
+                    console.error('Error generating debug_instructions content:', error);
+                    return {
+                        text: 'Error loading debug instructions'
+                    };
+                }
+            }
+        });
+
+        this.server.addResource({
+            uri: 'debugmcp://docs/breakpoints',
+            name: 'Breakpoint Strategy Guide',
+            description: 'Best practices for setting effective breakpoints',
+            mimeType: 'text/markdown',
+            async load() {
+                try {
+                    const title = debugInstructions.breakpoints.title;
+                    const content = debugInstructions.breakpoints.content;
+                    const fullContent = `# ${title}\n\n${content}`;
+                    console.log('breakpoints content length:', fullContent.length);
+                    console.log('breakpoints content preview:', fullContent.substring(0, 100));
+                    
+                    return {
+                        text: fullContent
+                    };
+                } catch (error) {
+                    console.error('Error generating breakpoints content:', error);
+                    return {
+                        text: 'Error loading breakpoint strategies'
+                    };
+                }
+            }
+        });
+
+        this.server.addResource({
+            uri: 'debugmcp://docs/troubleshooting',
+            name: 'Debugging Troubleshooting Guide',
+            description: 'Common issues and solutions for debugging problems',
+            mimeType: 'text/markdown',
+            async load() {
+                try {
+                    const title = debugInstructions.troubleshooting.title;
+                    const content = debugInstructions.troubleshooting.content;
+                    const fullContent = `# ${title}\n\n${content}`;                    
+                    return {
+                        text: fullContent
+                    };
+                } catch (error) {
+                    console.error('Error generating troubleshooting content:', error);
+                    return {
+                        text: 'Error loading troubleshooting guide'
+                    };
+                }
+            }
+        });
+
+        // Add language-specific resources
+        Object.entries(debugInstructions.languages).forEach(([language, guide]) => {
+            this.server.addResource({
+                uri: `debugmcp://docs/languages/${language}`,
+                name: `${guide.title}`,
+                description: `Debugging tips specific to ${language}`,
+                mimeType: 'text/markdown',
+                async load() {
+                    try {
+                        const fullContent = `# ${guide.title}\n\n${guide.content}`;                        
+                        return {
+                            text: fullContent
+                        };
+                    } catch (error) {
+                        console.error(`Error generating ${language} content:`, error);
+                        return {
+                            text: `Error loading ${language} debugging tips`
+                        };
+                    }
+                }
+            });
         });
     }
 
