@@ -41,7 +41,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 // Open the specific test file instead of the workspace folder
                 const testFileUri = vscode.Uri.file(config.program);
                 await vscode.commands.executeCommand('vscode.open', testFileUri);
+                // TODO: await doesn't work, consider adding a delay
                 vscode.commands.executeCommand('testing.debugCurrentFile');
+                await new Promise(resolve => setTimeout(resolve, this.executionDelay * 100));
                 return true;
             }
             return await vscode.debug.startDebugging(workspaceFolder, config);
@@ -169,6 +171,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 if (activeStackItem && 'frameId' in activeStackItem) {
                     state.updateContext(activeStackItem.frameId, activeStackItem.threadId);
                     
+                    // Extract frame name from stack frame
+                    await this.extractFrameName(activeSession, activeStackItem.frameId, state);
+                    
                     // Get the active editor
                     const activeEditor = vscode.window.activeTextEditor;
                     if (activeEditor) {
@@ -202,6 +207,29 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
+     * Extract frame name from the current stack frame
+     */
+    private async extractFrameName(session: vscode.DebugSession, frameId: number, state: DebugState): Promise<void> {
+        try {
+            // Get stack trace to extract frame name
+            const stackTraceResponse = await session.customRequest('stackTrace', {
+                threadId: state.threadId,
+                startFrame: 0,
+                levels: 1
+            });
+
+            if (stackTraceResponse?.stackFrames && stackTraceResponse.stackFrames.length > 0) {
+                const currentFrame = stackTraceResponse.stackFrames[0];
+                state.updateFrameName(currentFrame.name || null);
+            }
+        } catch (error) {
+            console.log('Unable to extract frame name:', error);
+            // Set empty frame name on error
+            state.updateFrameName(null);
+        }
+    }
+
+    /**
      * Get variables from the current debug context
      */
     public async getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any> {
@@ -218,10 +246,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             }
 
             const filteredScopes = response.scopes.filter((scopeItem: any) => {
-                if (scope === 'all') return true;
+                if (scope === 'all') {return true;}
                 const scopeName = scopeItem.name.toLowerCase();
-                if (scope === 'local') return scopeName.includes('local');
-                if (scope === 'global') return scopeName.includes('global');
+                if (scope === 'local') {return scopeName.includes('local');}
+                if (scope === 'global') {return scopeName.includes('global');}
                 return true;
             });
 

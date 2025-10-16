@@ -10,6 +10,7 @@ export class DebugState {
     public nextLines: string[];
     public frameId: number | null;
     public threadId: number | null;
+    public frameName: string | null;
 
     constructor() {
         this.sessionActive = false;
@@ -20,6 +21,7 @@ export class DebugState {
         this.nextLines = [];
         this.frameId = null;
         this.threadId = null;
+        this.frameName = null;
     }
 
     /**
@@ -34,6 +36,7 @@ export class DebugState {
         this.nextLines = [];
         this.frameId = null;
         this.threadId = null;
+        this.frameName = null;
     }
 
     /**
@@ -54,6 +57,14 @@ export class DebugState {
     }
 
     /**
+     * Update the current execution context
+     */
+    public updateContext(frameId: number, threadId: number): void {
+        this.frameId = frameId;
+        this.threadId = threadId;
+    }
+
+    /**
      * Update the current execution location
      */
     public updateLocation(
@@ -71,11 +82,17 @@ export class DebugState {
     }
 
     /**
-     * Update the debugging context (frame and thread IDs)
+     * Update frame name context
      */
-    public updateContext(frameId: number, threadId: number): void {
-        this.frameId = frameId;
-        this.threadId = threadId;
+    public updateFrameName(frameName: string | null): void {
+        this.frameName = frameName;
+    }
+
+    /**
+     * Check if frame name is available
+     */
+    public hasFrameName(): boolean {
+        return this.frameName !== null;
     }
 
     /**
@@ -91,6 +108,7 @@ export class DebugState {
         cloned.nextLines = [...this.nextLines];
         cloned.frameId = this.frameId;
         cloned.threadId = this.threadId;
+        cloned.frameName = this.frameName;
         return cloned;
     }
 }
