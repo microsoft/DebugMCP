@@ -43,7 +43,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 await vscode.commands.executeCommand('vscode.open', testFileUri);
                 // TODO: await doesn't work, consider adding a delay
                 vscode.commands.executeCommand('testing.debugCurrentFile');
-                await new Promise(resolve => setTimeout(resolve, this.executionDelay * 100));
+                await new Promise(resolve => setTimeout(resolve, this.executionDelay * 200)); // 1 minute delay
                 return true;
             }
             return await vscode.debug.startDebugging(workspaceFolder, config);

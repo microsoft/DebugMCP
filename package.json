@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP",
   "description": "A VSCode extension for debugging projects with enhanced MCP debugging capabilities for all programming languages",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -11,6 +11,14 @@
     "Debuggers",
     "AI",
     "Other"
+  ],
+  "keywords": [
+    "debugging",
+    "mcp",
+    "ai",
+    "agents",
+    "modelcontextprotocol",
+    "fastmcp"
   ],
   "repository": {
     "type": "git",
@@ -21,6 +29,51 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "debugmcp.configureAgents",
+        "title": "Configure AI Agents",
+        "category": "DebugMCP"
+      },
+      {
+        "command": "debugmcp.showAgentSelectionPopup",
+        "title": "Show Agent Selection Popup",
+        "category": "DebugMCP"
+      },
+      {
+        "command": "debugmcp.resetPopupState",
+        "title": "Reset Popup State (Development)",
+        "category": "DebugMCP"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "debugmcp.configureAgents",
+          "when": "true"
+        },
+        {
+          "command": "debugmcp.showAgentSelectionPopup",
+          "when": "true"
+        },
+        {
+          "command": "debugmcp.resetPopupState",
+          "when": "config.debugmcp.showDeveloperCommands == true"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DebugMCP",
+      "properties": {
+        "debugmcp.showDeveloperCommands": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show developer/testing commands in the command palette"
+        }
+      }
+    }
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",

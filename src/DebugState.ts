@@ -11,7 +11,8 @@ export class DebugState {
     public frameId: number | null;
     public threadId: number | null;
     public frameName: string | null;
-
+    // TODO breakpoints
+    
     constructor() {
         this.sessionActive = false;
         this.fileFullPath = null;
