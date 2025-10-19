@@ -85,12 +85,16 @@ export class DebuggingHandler implements IDebuggingHandler {
             await this.executor.stopDebugging();
 
             // Clear breakpoints option
+            let baseMessage = '';
             if (breakpointCount > 0) {
                 this.executor.clearAllBreakpoints();
-                return `Debug session stopped successfully. Cleared ${breakpointCount} breakpoint(s).`;
+                baseMessage = `Debug session stopped successfully. Cleared ${breakpointCount} breakpoint(s).`;
             } else {
-                return 'Debug session stopped successfully';
+                baseMessage = 'Debug session stopped successfully';
             }
+
+            // Add drill-down reminder
+            return baseMessage + '\n\n' + this.getRootCauseAnalysisCheckpointMessage();
         } catch (error) {
             throw new Error(`Error stopping debug session: ${error}`);
         }
@@ -173,8 +177,14 @@ export class DebuggingHandler implements IDebuggingHandler {
             // Get the current debug state
             const debugState = await this.executor.getCurrentDebugState(this.numNextLines);
             
-            // Format the debug state as a string
-            return this.formatDebugState(debugState);
+            let result = this.formatDebugState(debugState);
+            
+            // If session ended (no location info), add drill-down reminder
+            if (!debugState.sessionActive || !debugState.hasLocationInfo()) {
+                result += '\n\n' + this.getRootCauseAnalysisCheckpointMessage();
+            }
+            
+            return result;
         } catch (error) {
             throw new Error(`Error executing continue: ${error}`);
         }
@@ -400,15 +410,15 @@ export class DebuggingHandler implements IDebuggingHandler {
             output += `${state.currentLine}: ${state.currentLineContent}\n`;
             
             // Show next few lines for context
-            if (state.nextLines && state.nextLines.length > 0) {
-                output += '\nNext lines:\n';
-                state.nextLines.forEach((line, index) => {
-                    const lineNumber = (state.currentLine || 0) + index + 1;
-                    output += `   ${lineNumber}: ${line}\n`;
-                });
-            }
+            // if (state.nextLines && state.nextLines.length > 0) {
+            //     output += '\nNext lines:\n';
+            //     state.nextLines.forEach((line, index) => {
+            //         const lineNumber = (state.currentLine || 0) + index + 1;
+            //         output += `   ${lineNumber}: ${line}\n`;
+            //     });
+            // }
         } else {
-            output += 'No location information available. The session might have ended\n';
+            output += 'No location information available. The session might have stopped or ended\n';
         }
                 
         return output;
@@ -426,5 +436,36 @@ export class DebuggingHandler implements IDebuggingHandler {
      */
     public isDebuggingActive(): boolean {
         return this.executor.hasActiveSession();
+    }
+
+    /**
+     * Get the universal drill-down reminder message
+     */
+    private getRootCauseAnalysisCheckpointMessage(): string {
+        return `⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**
+
+Before concluding your debugging session:
+
+❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?
+
+🔍 **If you only identified WHERE it went wrong:**
+- Variable is null/undefined
+- Function returned unexpected value  
+- Error occurred at specific line
+- Condition evaluated incorrectly
+
+➡️ **You likely found a SYMPTOM - Continue debugging!**
+
+ROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:
+- Incorrect variable initialization
+- Logic error in function implementation
+- Missing error handling
+- Faulty assumptions in conditions
+
+REQUIRED NEXT STEPS:
+1. Use 'add_breakpoint' to set breakpoints at investigation points
+2. Use 'start_debugging' to trace from the beginning
+3. Investigate WHY the issue occurred, not just WHAT happened
+4. Repite the process as necessary until the ROOT CAUSE is identified`;
     }
 }
