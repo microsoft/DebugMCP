@@ -3,6 +3,25 @@
   "displayName": "DebugMCP",
   "description": "A VSCode extension for debugging projects with enhanced MCP debugging capabilities for all programming languages",
   "version": "0.1.1",
+  "publisher": "ozzafar",
+  "author": {
+    "name": "Oz Zafar",
+    "email": "ozzafar@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/microsoft/DebugMCP",
+  "bugs": {
+    "url": "https://github.com/microsoft/DebugMCP/issues"
+  },
+  "keywords": [
+    "debug",
+    "mcp",
+    "model context protocol",
+    "debugging",
+    "ai",
+    "microsoft",
+    "vscode-extension"
+  ],
   "engines": {
     "vscode": "^1.104.0"
   },
