@@ -95,11 +95,11 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **Rust** | [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) | `.rs` | ✅ Fully Supported |
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
 | **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
-| **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs` | ⚠️ Coming Soon |
+| **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs` | ✅ Fully Supported |
 
 ## Configuration
 
-### MCP Server Configuration
+### MCP Server Configuration (Recommended)
 
 The extension runs an MCP server automatically. It will pop up a message to auto-register the MCP server in your AI assistant.
 
@@ -182,11 +182,11 @@ Configure DebugMCP behavior in VSCode settings:
 ### Launch Configuration Integration
 The extension handles debug configurations intelligently:
 
-1. **Existing launch.json**: If a `.vscode/launch.json` file exists, it will:
+- **Existing launch.json**: If a `.vscode/launch.json` file exists, it will:
    - Search for a relevant configuration
    - Use a specific configuration if found
 
-2. **Default Configuration**: If no launch.json exists or no relevant config, it creates an appropriate default configurations for each language based on file extension detection
+- **Default Configuration**: If no launch.json exists or no relevant config, it creates an appropriate default configurations for each language based on file extension detection
 
 
 ## Requirements
@@ -202,10 +202,6 @@ The extension handles debug configurations intelligently:
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
   - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
 - MCP-compatible AI assistant (Copilot, Cline, Roo..)
-
-## Simplified Design
-
-This extension is designed to be minimal - it only starts the MCP server when activated. All debugging functionality is accessed through the MCP interface, not through VSCode commands.
 
 ## Demo
 
