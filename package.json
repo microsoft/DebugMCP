@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP",
   "description": "A VSCode extension for debugging projects with enhanced MCP debugging capabilities for all programming languages",
-  "version": "0.1.1",
+  "version": "1.0.1",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
