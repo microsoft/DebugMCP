@@ -6,7 +6,12 @@ A VSCode extension that provides comprehensive multi-language debugging capabili
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-1.0.2-green.svg)](https://github.com/microsoft/DebugMCP)
+[![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
+
+## 🚀 Quick Install
+
+**[Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)** or use the direct link: `vscode:extension/ozzafar.debugmcpextension`
 
 ## Table of Contents
 - [Overview](#overview)
@@ -58,7 +63,17 @@ DebugMCP follows systematic debugging practices for effective issue resolution:
 
 ## Installation
 
-### VSCode Marketplace
+### Quick Install Options
+
+**Option 1: Direct Link** (Fastest)
+- Click this link: [vscode:extension/ozzafar.debugmcpextension](vscode:extension/ozzafar.debugmcpextension)
+- Or copy and paste in your browser: `vscode:extension/ozzafar.debugmcpextension`
+
+**Option 2: VS Code Marketplace**
+- Visit: [https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
+- Click "Install"
+
+**Option 3: Within VS Code**
 1. Open VSCode
 2. Go to Extensions (Ctrl+Shift+X / Cmd+Shift+X)
 3. Search for "DebugMCP"
@@ -253,4 +268,3 @@ Any use of third-party trademarks or logos are subject to those third-party's po
 MIT License - See [LICENSE](LICENSE.txt) for details
 
 This extension was created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker**.
-
