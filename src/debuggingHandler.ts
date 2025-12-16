@@ -10,7 +10,7 @@ import { logger } from './utils/logger';
  * Interface for debugging handler operations
  */
 export interface IDebuggingHandler {
-    handleStartDebugging(args: { fileFullPath: string; workingDirectory?: string; configurationName?: string }): Promise<string>;
+    handleStartDebugging(args: { fileFullPath: string; workingDirectory?: string; configurationName?: string; testName?: string }): Promise<string>;
     handleStopDebugging(): Promise<string>;
     handleStepOver(): Promise<string>;
     handleStepInto(): Promise<string>;
@@ -19,6 +19,7 @@ export interface IDebuggingHandler {
     handleRestart(): Promise<string>;
     handleAddBreakpoint(args: { fileFullPath: string; lineContent: string }): Promise<string>;
     handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
+    handleClearAllBreakpoints(): Promise<string>;
     handleListBreakpoints(): Promise<string>;
     handleGetVariables(args: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
@@ -46,9 +47,10 @@ export class DebuggingHandler implements IDebuggingHandler {
     public async handleStartDebugging(args: { 
         fileFullPath: string; 
         workingDirectory?: string; 
-        configurationName?: string; 
+        configurationName?: string;
+        testName?: string;
     }): Promise<string> {
-        const { fileFullPath, workingDirectory } = args;
+        const { fileFullPath, workingDirectory, testName } = args;
         
         try {
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -63,7 +65,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 workspaceFolder, 
                 fileFullPath, 
                 workingDirectory, 
-                selectedConfigName
+                selectedConfigName,
+                testName
             );
 
             const started = await this.executor.startDebugging(workspaceFolder, debugConfig);
@@ -77,8 +80,9 @@ export class DebuggingHandler implements IDebuggingHandler {
                 
                 // return also the current state
                 const configInfo = selectedConfigName ? ` using configuration '${selectedConfigName}'` : ' with default configuration';
+                const testInfo = testName ? ` (test: ${testName})` : '';
                 const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-                return `Debug session started successfully for: ${fileFullPath}${configInfo}. Current state: ${this.formatDebugState(currentState)}`;
+                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${this.formatDebugState(currentState)}`;
             } else {
                 throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
             }
@@ -96,22 +100,30 @@ export class DebuggingHandler implements IDebuggingHandler {
                 return 'No active debug session to stop';
             }
 
-            const breakpointCount = this.executor.getBreakpoints().length;
             await this.executor.stopDebugging();
 
-            // Clear breakpoints option
-            let baseMessage = '';
-            if (breakpointCount > 0) {
-                this.executor.clearAllBreakpoints();
-                baseMessage = `Debug session stopped successfully. Cleared ${breakpointCount} breakpoint(s).`;
-            } else {
-                baseMessage = 'Debug session stopped successfully';
-            }
-
             // Add drill-down reminder
-            return baseMessage + '\n\n' + this.getRootCauseAnalysisCheckpointMessage();
+            return 'Debug session stopped successfully\n\n' + this.getRootCauseAnalysisCheckpointMessage();
         } catch (error) {
             throw new Error(`Error stopping debug session: ${error}`);
+        }
+    }
+
+    /**
+     * Clear all breakpoints
+     */
+    public async handleClearAllBreakpoints(): Promise<string> {
+        try {
+            const breakpointCount = this.executor.getBreakpoints().length;
+            
+            if (breakpointCount === 0) {
+                return 'No breakpoints to clear';
+            }
+
+            this.executor.clearAllBreakpoints();
+            return `Successfully cleared ${breakpointCount} breakpoint(s)`;
+        } catch (error) {
+            throw new Error(`Error clearing breakpoints: ${error}`);
         }
     }
 

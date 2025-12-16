@@ -124,3 +124,12 @@ Before stopping your debug session, ensure you can answer:
 ✅ **BEST PRACTICE:** Set breakpoint only on executable lines.
 ❌ **COMMON MISTAKE:** Step over the problematic line without fully understanding why the issue occured.
 ✅ **BEST PRACTICE:** Stop the session, set breakpoint in the problematic line and restart the session.
+
+## 🧹 CLEANUP AFTER ROOT CAUSE VERIFICATION
+
+Once you have:
+- ✅ Identified the ROOT CAUSE (not just the symptom)
+- ✅ Verified your understanding by tracing the complete chain
+- ✅ Confirmed the fix addresses the root cause
+
+Use clean all breakpoints before concluding your debugging session. This ensures a clean slate for the next debugging task.

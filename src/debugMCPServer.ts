@@ -73,9 +73,10 @@ export class DebugMCPServer {
         // Start debugging tool
         this.server.addTool({
             name: 'start_debugging',
-            description: 'IMPORTANT DEBUGGING TOOL - Use this INSTEAD of reading code or making assumptions!' +
-                         '\n\n📍 USE THIS WHEN:' +
+            description: 'IMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
+                         '\n\nUSE THIS WHEN:' +
                          '\n• Any bug, error, or unexpected behavior occurs' +
+                         '\n• Asked to debug a unit test' +
                          '\n• Variables have wrong/null values' +
                          '\n• Functions return incorrect results' +
                          '\n• Code behaves differently than expected' +
@@ -162,8 +163,6 @@ export class DebugMCPServer {
             },
         });
 
-        // TODO clear breakpoints tool
-
         // Remove breakpoint tool
         this.server.addTool({
             name: 'remove_breakpoint',
@@ -174,6 +173,15 @@ export class DebugMCPServer {
             }),
             execute: async (args: { fileFullPath: string; line: number }) => {
                 return await this.debuggingHandler.handleRemoveBreakpoint(args);
+            },
+        });
+
+        // Clear all breakpoints tool
+        this.server.addTool({
+            name: 'clear_all_breakpoints',
+            description: 'Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.',
+            execute: async () => {
+                return await this.debuggingHandler.handleClearAllBreakpoints();
             },
         });
 
