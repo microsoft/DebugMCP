@@ -11,7 +11,6 @@ export interface IDebugConfigurationManager {
     getDebugConfig(
         workspaceFolder: vscode.WorkspaceFolder, 
         fileFullPath: string, 
-        workingDirectory?: string, 
         configurationName?: string,
         testName?: string
     ): Promise<vscode.DebugConfiguration>;
@@ -31,12 +30,11 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
     public async getDebugConfig(
         workspaceFolder: vscode.WorkspaceFolder,
         fileFullPath: string,
-        workingDirectory?: string,
         configurationName?: string,
         testName?: string
     ): Promise<vscode.DebugConfiguration> {
         if (configurationName === DebugConfigurationManager.AUTO_LAUNCH_CONFIG) {
-            return this.createDefaultDebugConfig(fileFullPath, workingDirectory, workspaceFolder, testName);
+            return this.createDefaultDebugConfig(fileFullPath, workspaceFolder, testName);
         }
 
         try {
@@ -58,8 +56,6 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     if (namedConfig) {
                         return {
                             ...namedConfig,
-                            program: fileFullPath, // Override program to our specific file
-                            cwd: workingDirectory || namedConfig.cwd || workspaceFolder.uri.fsPath,
                             name: `DebugMCP Launch (${configurationName})`
                         };
                     }
@@ -71,7 +67,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         }
 
         // Fallback: always return a default configuration if nothing else matched
-        return this.createDefaultDebugConfig(fileFullPath, workingDirectory, workspaceFolder, testName);
+        return this.createDefaultDebugConfig(fileFullPath, workspaceFolder, testName);
     }
 
     /**
@@ -166,12 +162,11 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
      */
     private async createDefaultDebugConfig(
         fileFullPath: string, 
-        workingDirectory: string | undefined, 
         workspaceFolder: vscode.WorkspaceFolder,
         testName?: string
     ): Promise<vscode.DebugConfiguration> {
         const detectedLanguage = this.detectLanguageFromFilePath(fileFullPath);
-        const cwd = workingDirectory || workspaceFolder.uri.fsPath;
+        const cwd = path.dirname(fileFullPath);
         
         // Build test-specific configurations based on language
         if (testName && detectedLanguage != 'coreclr') {
@@ -220,7 +215,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 type: 'cppdbg',
                 request: 'launch',
                 name: 'DebugMCP C++ Launch',
-                program: fileFullPath.replace(/\.(cpp|cc|c)$/, ''),
+                program: fileFullPath.replace(/\.(cpp|cc|c)$/, '.exe'),
                 cwd: cwd,
                 console: 'integratedTerminal'
             },

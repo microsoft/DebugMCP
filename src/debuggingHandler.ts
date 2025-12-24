@@ -10,7 +10,7 @@ import { logger } from './utils/logger';
  * Interface for debugging handler operations
  */
 export interface IDebuggingHandler {
-    handleStartDebugging(args: { fileFullPath: string; workingDirectory?: string; configurationName?: string; testName?: string }): Promise<string>;
+    handleStartDebugging(args: { fileFullPath: string; configurationName?: string; testName?: string }): Promise<string>;
     handleStopDebugging(): Promise<string>;
     handleStepOver(): Promise<string>;
     handleStepInto(): Promise<string>;
@@ -46,11 +46,10 @@ export class DebuggingHandler implements IDebuggingHandler {
      */
     public async handleStartDebugging(args: { 
         fileFullPath: string; 
-        workingDirectory?: string; 
         configurationName?: string;
         testName?: string;
     }): Promise<string> {
-        const { fileFullPath, workingDirectory, testName } = args;
+        const { fileFullPath, testName } = args;
         
         try {
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -64,7 +63,6 @@ export class DebuggingHandler implements IDebuggingHandler {
             const debugConfig = await this.configManager.getDebugConfig(
                 workspaceFolder, 
                 fileFullPath, 
-                workingDirectory, 
                 selectedConfigName,
                 testName
             );
