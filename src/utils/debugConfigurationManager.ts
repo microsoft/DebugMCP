@@ -96,13 +96,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             }
             
             // Always show popup now - even when no configurations exist
-            const configOptions: vscode.QuickPickItem[] = [
-                {
-                    label: DebugConfigurationManager.AUTO_LAUNCH_CONFIG,
-                    description: 'Use auto-detected default configuration',
-                    detail: 'DebugMCP will create a default configuration based on file extension'
-                }
-            ];
+            const configOptions: vscode.QuickPickItem[] = [];
             
             // Add existing configurations if any
             if (configurations.length > 0) {
@@ -112,6 +106,13 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     detail: config.request ? `Request: ${config.request}` : ''
                 })));
             }
+            
+            // Add AUTO_LAUNCH_CONFIG at the end
+            configOptions.push({
+                label: DebugConfigurationManager.AUTO_LAUNCH_CONFIG,
+                description: 'Use auto-detected default configuration (beta)',
+                detail: 'DebugMCP will create a default configuration based on file extension. This is a heuristic and may not always work as expected.'
+            });
             
             // Show quick pick to user
             const selected = await vscode.window.showQuickPick(configOptions, {
