@@ -59,6 +59,10 @@ export class DebugMCPServer {
         this.server = new FastMCP({
             name: 'debugmcp',
             version: '1.0.0',
+            ping: {
+                enabled: true,
+                intervalMs: 30000, // Send ping to keep SSE connection alive
+            }
         });
 
         this.setupTools();
@@ -328,6 +332,7 @@ export class DebugMCPServer {
                 transportType: 'httpStream',
                 httpStream: {
                     port: this.port,
+                    endpoint: '/sse'
                 },
             });
 
