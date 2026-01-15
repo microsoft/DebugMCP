@@ -14,12 +14,12 @@ AI Agent (Cline/Copilot/Cursor) → MCP/SSE → DebugMCPServer → DebuggingHand
 
 | Component | Responsibility | Docs |
 |-----------|----------------|------|
-| `DebugMCPServer` | MCP server, tool/resource registration | [docs/debugMCPServer.md](docs/debugMCPServer.md) |
-| `DebuggingHandler` | Operation orchestration, state change detection | [docs/debuggingHandler.md](docs/debuggingHandler.md) |
-| `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/debuggingExecutor.md](docs/debuggingExecutor.md) |
-| `DebugState` | Debug session state model | [docs/debugState.md](docs/debugState.md) |
-| `DebugConfigurationManager` | Launch configs, language detection | [docs/debugConfigurationManager.md](docs/debugConfigurationManager.md) |
-| `AgentConfigurationManager` | AI agent auto-configuration | [docs/agentConfigurationManager.md](docs/agentConfigurationManager.md) |
+| `DebugMCPServer` | MCP server, tool/resource registration | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
+| `DebuggingHandler` | Operation orchestration, state change detection | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
+| `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
+| `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
+| `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
+| `AgentConfigurationManager` | AI agent auto-configuration | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 
 ## Documentation Maintenance
 
@@ -80,11 +80,15 @@ Include in each source file:
 
 ## Documentation Resources
 
-The `docs/` folder contains resources exposed to AI agents via MCP:
+The `docs/` folder contains two types of documentation:
+
+**Component docs** (referenced in Key Components table above): Developer documentation for understanding the codebase architecture.
+
+**AI Agent resources** (served via MCP at runtime):
 
 | File | Purpose |
 |------|---------|
-| `debug_instructions.md` | Core debugging workflow guide for AI agents |
-| `troubleshooting/*.md` | Language-specific debugging tips (Python, JavaScript, Java, C#) |
+| `agent-resources/debug_instructions.md` | Core debugging workflow guide for AI agents |
+| `agent-resources/troubleshooting/*.md` | Language-specific debugging tips (Python, JavaScript, Java, C#) |
 
-These files are loaded at runtime by `DebugMCPServer` and served as MCP resources.
+These resource files are loaded by `DebugMCPServer` and exposed as MCP resources that AI agents can read to learn how to use the debugging tools effectively.
