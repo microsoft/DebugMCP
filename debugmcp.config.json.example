@@ -1,0 +1,31 @@
+{
+  "$schema": "./debugmcp.config.schema.json",
+  "port": 3001,
+  "timeout": 180,
+  "adapters": {
+    "python": {
+      "command": "python",
+      "args": ["-m", "debugpy.adapter"],
+      "cwd": "${workspaceFolder}",
+      "env": {}
+    },
+    "node": {
+      "command": "node",
+      "args": ["${env:HOME}/.vscode/extensions/ms-vscode.js-debug-*/src/dapDebugServer.js"],
+      "cwd": "${workspaceFolder}"
+    }
+  },
+  "defaults": {
+    "python": {
+      "type": "python",
+      "request": "launch",
+      "console": "internalConsole",
+      "justMyCode": true
+    },
+    "node": {
+      "type": "node",
+      "request": "launch",
+      "console": "internalConsole"
+    }
+  }
+}

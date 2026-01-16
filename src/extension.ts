@@ -2,8 +2,9 @@
 
 import * as vscode from 'vscode';
 import { DebugMCPServer } from './debugMCPServer';
+import { VSCodeDebugBackend, VSCodeConfigurationManager } from './vscode';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
-import { logger, LogLevel } from './utils/logger';
+import { logger } from './utils/logger';
 
 let mcpServer: DebugMCPServer | null = null;
 let agentConfigManager: AgentConfigurationManager | null = null;
@@ -11,8 +12,11 @@ let agentConfigManager: AgentConfigurationManager | null = null;
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize logging first
     logger.info('DebugMCP extension is now active!');
-    logger.logSystemInfo();
-    logger.logEnvironment();
+    // Log system info (VS Code specific - these are no-ops in standalone)
+    logger.info(`VS Code Version: ${vscode.version}`);
+    logger.info(`Platform: ${process.platform}`);
+    logger.info(`Architecture: ${process.arch}`);
+    logger.info(`Node.js Version: ${process.version}`);
 
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);
@@ -28,7 +32,11 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
         logger.info('Starting MCP server initialization...');
         
-        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds);
+        // Create VS Code specific backend and configuration manager
+        const backend = new VSCodeDebugBackend();
+        const configManager = new VSCodeConfigurationManager();
+        
+        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds, backend, configManager);
         await mcpServer.initialize();
         await mcpServer.start();
         

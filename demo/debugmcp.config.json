@@ -1,0 +1,19 @@
+{
+  "port": 3001,
+  "timeout": 180,
+  "adapters": {
+    "python": {
+      "command": "python",
+      "args": ["-m", "debugpy.adapter"],
+      "cwd": "${workspaceFolder}"
+    }
+  },
+  "defaults": {
+    "python": {
+      "type": "python",
+      "request": "launch",
+      "console": "internalConsole",
+      "justMyCode": true
+    }
+  }
+}
