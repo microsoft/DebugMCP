@@ -210,24 +210,35 @@ export class StandaloneDAPBackend implements IDebugBackend {
 			// Initialize the adapter
 			await this.adapterManager.initializeAdapter(adapterType);
 
-			// Wait for initialized event
-			await this.waitForInitialized();
-
-			// Set breakpoints before launch
-			await this.syncAllBreakpoints();
-
 			// Send launch or attach request
+			// Note: Some adapters (like debugpy) send the 'initialized' event AFTER launch,
+			// and the launch response may not come until the session completes or stops.
+			// So we send launch without awaiting, then wait for initialized, then configurationDone.
 			const client = this.adapterManager.getClient()!;
-			if (config.request === 'attach') {
-				await client.attach(config);
-			} else {
-				await client.launch({
+			
+			// Set up promise for initialized event BEFORE sending launch
+			const initializedPromise = this.waitForInitialized();
+
+			// Send launch/attach without blocking
+			const launchPromise = config.request === 'attach'
+				? client.attach(config)
+				: client.launch({
 					...config,
 					cwd: workingDirectory,
 				});
-			}
+			
+			// Handle launch errors in background
+			launchPromise.catch(err => {
+				console.error('Launch request error:', err);
+			});
 
-			// Send configurationDone
+			// Wait for initialized event (may have already fired, or will fire after launch)
+			await initializedPromise;
+
+			// Set breakpoints after initialized
+			await this.syncAllBreakpoints();
+
+			// Send configurationDone - this signals the adapter to start running
 			await client.configurationDone();
 
 			this.stateTracker.setState('running');

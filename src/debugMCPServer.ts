@@ -331,8 +331,7 @@ export class DebugMCPServer {
 		// First check if server is already running
 		const isRunning = await this.isServerRunning();
 		if (isRunning) {
-			logger.info(`DebugMCP server is already running on port ${this.port}`);
-			return;
+			throw new Error(`Port ${this.port} is already in use. Kill the existing process or use a different port.`);
 		}
 
 		try {

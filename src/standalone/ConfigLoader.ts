@@ -29,6 +29,8 @@ export interface DefaultConfig {
 	request: 'launch' | 'attach';
 	/** Console type */
 	console?: 'integratedTerminal' | 'externalTerminal' | 'internalConsole';
+	/** Python-specific: debug only user code */
+	justMyCode?: boolean;
 	/** Additional default properties */
 	[key: string]: unknown;
 }
@@ -200,7 +202,7 @@ export class ConfigLoader implements IDebugConfigurationManager {
 		workingDirectory: string,
 		fileFullPath: string,
 		_configurationName?: string,
-		_testName?: string
+		testName?: string
 	): Promise<DebugConfiguration> {
 		if (!this.config) {
 			await this.load();
@@ -209,7 +211,12 @@ export class ConfigLoader implements IDebugConfigurationManager {
 		const language = this.detectLanguageFromFilePath(fileFullPath);
 		const defaults: Partial<DefaultConfig> = this.config?.defaults?.[language] || {};
 
-		// Build the configuration
+		// If testName is provided, create test-specific configuration
+		if (testName) {
+			return this.createTestDebugConfig(language, fileFullPath, workingDirectory, testName, defaults);
+		}
+
+		// Build the standard launch configuration
 		const config: DebugConfiguration = {
 			type: defaults.type || language,
 			request: defaults.request || 'launch',
@@ -221,6 +228,127 @@ export class ConfigLoader implements IDebugConfigurationManager {
 		};
 
 		return config;
+	}
+
+	/**
+	 * Create a debug configuration specifically for running tests
+	 */
+	private async createTestDebugConfig(
+		language: string,
+		fileFullPath: string,
+		workingDirectory: string,
+		testName: string,
+		defaults: Partial<DefaultConfig>
+	): Promise<DebugConfiguration> {
+		const fileName = path.basename(fileFullPath);
+
+		switch (language) {
+			case 'python':
+				// Auto-detect class name and format test name appropriately
+				const formattedTestName = await this.formatPythonTestName(fileFullPath, testName);
+
+				return {
+					type: 'python',  // Use 'python' to match adapter registration
+					request: 'launch',
+					name: `Standalone Test: ${testName}`,
+					module: 'pytest',
+					args: [
+						fileFullPath,
+						'-k', testName,
+						'-v',
+						'--no-header',
+						'-s'  // Don't capture stdout, helps with debugging
+					],
+					cwd: workingDirectory,
+					console: defaults.console || 'internalConsole',
+					justMyCode: defaults.justMyCode !== undefined ? defaults.justMyCode : true,
+					stopOnEntry: false,
+				};
+
+			case 'node':
+				// Support for Jest and Mocha test frameworks
+				const isJest = fileName.includes('.test.') || fileName.includes('.spec.');
+
+				if (isJest) {
+					return {
+						type: 'node',
+						request: 'launch',
+						name: `Standalone Jest Test: ${testName}`,
+						program: path.join(workingDirectory, 'node_modules/.bin/jest'),
+						args: [
+							'--testNamePattern', testName,
+							'--runInBand',
+							fileFullPath
+						],
+						cwd: workingDirectory,
+						console: defaults.console || 'internalConsole',
+						stopOnEntry: false,
+					};
+				} else {
+					return {
+						type: 'node',
+						request: 'launch',
+						name: `Standalone Mocha Test: ${testName}`,
+						program: path.join(workingDirectory, 'node_modules/.bin/mocha'),
+						args: [
+							'--grep', testName,
+							fileFullPath
+						],
+						cwd: workingDirectory,
+						console: defaults.console || 'internalConsole',
+						stopOnEntry: false,
+					};
+				}
+
+			default:
+				// For unsupported languages, fall back to running the entire file
+				return {
+					type: defaults.type || language,
+					request: 'launch',
+					name: `Standalone Debug (test filtering not supported for ${language}): ${testName}`,
+					program: fileFullPath,
+					cwd: workingDirectory,
+					console: defaults.console || 'internalConsole',
+					stopOnEntry: false,
+					...defaults,
+				};
+		}
+	}
+
+	/**
+	 * Extract the class name from a Python test file
+	 */
+	private async extractPythonClassName(fileFullPath: string): Promise<string | null> {
+		try {
+			const content = await fs.promises.readFile(fileFullPath, 'utf8');
+			// Match Python class definition starting with capital letter
+			const classMatch = content.match(/class\s+([A-Z][a-zA-Z0-9_]*)/);
+			return classMatch ? classMatch[1] : null;
+		} catch (error) {
+			console.log('Error extracting class name from Python file:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Format Python test name by auto-detecting class name if needed
+	 */
+	private async formatPythonTestName(fileFullPath: string, testName: string): Promise<string> {
+		const moduleName = path.basename(fileFullPath, '.py');
+
+		// If testName already contains a dot, assume it's already qualified
+		if (testName.includes('.')) {
+			return `${moduleName}.${testName}`;
+		}
+
+		// Try to extract the class name from the file
+		const className = await this.extractPythonClassName(fileFullPath);
+		if (className) {
+			return `${moduleName}.${className}.${testName}`;
+		}
+
+		// No class found, assume it's a standalone test function
+		return `${moduleName}.${testName}`;
 	}
 
 	/**

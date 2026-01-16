@@ -124,9 +124,8 @@ def test_complex_calculation():
 
     BUG: Uses fibonacci(4) instead of fibonacci(5), causing wrong result.
     """
-    # BUG: Should be fibonacci(5) to get [0, 1, 1, 2, 3]
-    # But we're using fibonacci(4) which gives [0, 1, 1, 2]
-    fib_numbers = fibonacci(4)  # BUG HERE!
+    # Get first 5 Fibonacci numbers: [0, 1, 1, 2, 3]
+    fib_numbers = fibonacci(5)
 
     # Calculate factorial of each
     factorials = []
