@@ -230,7 +230,7 @@ export class DebugMCPServer {
             description: 'Step-by-step instructions for debugging with DebugMCP',
             mimeType: 'text/markdown',
             load: async () => {
-                const content = await this.loadMarkdownFile('debug_instructions.md');
+                const content = await this.loadMarkdownFile('agent-resources/debug_instructions.md');
                 return {
                     text: content
                 };
@@ -253,7 +253,7 @@ export class DebugMCPServer {
                 description: `Debugging tips specific to ${language}`,
                 mimeType: 'text/markdown',
                 load: async () => {
-                    const content = await this.loadMarkdownFile(`troubleshooting/${language}.md`);
+                    const content = await this.loadMarkdownFile(`agent-resources/troubleshooting/${language}.md`);
                     return {
                         text: content
                     };

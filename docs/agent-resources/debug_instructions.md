@@ -2,10 +2,10 @@
 
 ⚠️  **CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:**
 1. **FIRST:** Use 'add_breakpoint' to set an initial breakpoint at a starting point
-1. **THEN:** Optionally use 'add_breakpoint' to set breakpoints at strategic points
-2. **THEN:** Use 'start_debugging' tool to start debugging
-3. **THEN:** Use repetitively all the other tools to navigate and inspect step by step
-3. **FINALLY:** Get to the problematic line to fully understand the root cause. If needed, restart the debug session using restart_debugging.
+2. **THEN:** Optionally use 'add_breakpoint' to set breakpoints at strategic points
+3. **THEN:** Use 'start_debugging' tool to start debugging
+4. **THEN:** Use repetitively all the other tools to navigate and inspect step by step
+5. **FINALLY:** Get to the problematic line to fully understand the root cause. If needed, restart the debug session using restart_debugging.
 
 ## 🚨 ROOT CAUSE ANALYSIS - CRITICAL FRAMEWORK
 

@@ -611,6 +611,6 @@ REQUIRED NEXT STEPS:
 1. Use 'add_breakpoint' to set breakpoints at investigation points
 2. Use 'start_debugging' to trace from the beginning
 3. Investigate WHY the issue occurred, not just WHAT happened
-4. Repite the process as necessary until the ROOT CAUSE is identified`;
+4. Repeat the process as necessary until the ROOT CAUSE is identified`;
     }
 }
