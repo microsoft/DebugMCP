@@ -90,8 +90,9 @@ export class DebugMCPServer {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
                 testName: z.string().optional().describe('Name of the specific test name to debug.'),
+                configurationName: z.string().optional().describe('Name of the debug configuration from launch.json to use. If provided, skips the configuration selection dialog.'),
             }),
-            execute: async (args: { fileFullPath: string; workingDirectory: string; testName?: string }) => {
+            execute: async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) => {
                 return await this.debuggingHandler.handleStartDebugging(args);
             },
         });
