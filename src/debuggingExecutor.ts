@@ -38,6 +38,14 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         config: vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
+
+            // Handle compound configurations - pass the name directly to VS Code
+            if ((config as any).__isCompound) {
+                const compoundName = (config as any).__compoundName;
+                return await vscode.debug.startDebugging(workspaceFolder, compoundName);
+            }
+
             // Special handling for coreclr launch configurations (not attach)
             // Attach configurations use processName/processId instead of program
             if (config.type === 'coreclr' && config.request !== 'attach') {
@@ -47,7 +55,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 vscode.commands.executeCommand('testing.debugCurrentFile');
                 return true;
             }
-            const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
+
             return await vscode.debug.startDebugging(workspaceFolder, config);
         } catch (error) {
             throw new Error(`Failed to start debugging: ${error}`);
