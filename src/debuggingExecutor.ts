@@ -34,11 +34,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Start a debugging session
      */
     public async startDebugging(
-        workingDirectory: string, 
+        workingDirectory: string,
         config: vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
-            if (config.type === 'coreclr') {
+            // Special handling for coreclr launch configurations (not attach)
+            // Attach configurations use processName/processId instead of program
+            if (config.type === 'coreclr' && config.request !== 'attach') {
                 // Open the specific test file instead of the workspace folder
                 const testFileUri = vscode.Uri.file(config.program);
                 await vscode.commands.executeCommand('vscode.open', testFileUri);
