@@ -505,22 +505,37 @@ export class DebuggingHandler implements IDebuggingHandler {
     private async waitForStateChange(beforeState: DebugState): Promise<DebugState> {
         const baseDelay = 1000; // Start with 1 second
         const maxDelay = 1000; // Cap at 1 second
+        const maxRunningAttempts = 3; // Max attempts to wait when process is running without location info
         const startTime = Date.now();
         let attempt = 0;
-                
+        let runningWithoutLocationAttempts = 0;
+
         while (Date.now() - startTime < this.timeoutInSeconds * 1000) {
             const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-            
+
             if (this.hasStateChanged(beforeState, currentState)) {
                 return currentState;
             }
-            
+
             // If session ended, return immediately
             if (!currentState.sessionActive) {
                 return currentState;
             }
-            
-            logger.info(`[Attempt ${attempt + 1}] Waiting for debugger state to change...`);
+
+            // Early exit: if we don't have location info (process is running),
+            // wait a few attempts for it to come back (e.g., stepping), then give up.
+            // This prevents infinite polling when execution continues past all breakpoints.
+            // This handles two scenarios:
+            // 1. We HAD location info before (paused) but now we don't (running after continue)
+            // 2. We DIDN'T have location info before (already running) and still don't (second continue call)
+            if (!currentState.hasLocationInfo() && currentState.sessionActive) {
+                runningWithoutLocationAttempts++;
+                if (runningWithoutLocationAttempts >= maxRunningAttempts) {
+                    return currentState;
+                }
+            } else if (currentState.hasLocationInfo()) {
+                runningWithoutLocationAttempts = 0; // Reset if we get location info back
+            }
 
             // Calculate delay using exponential backoff with jitter (same as waitForActiveDebugSession)
             const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
@@ -529,7 +544,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             await new Promise(resolve => setTimeout(resolve, jitteredDelay));
             attempt++;
         }
-        
+
         // If we timeout, return the current state (might be unchanged)
         logger.info('State change detection timed out, returning current state');
         return await this.executor.getCurrentDebugState(this.numNextLines);
@@ -539,6 +554,12 @@ export class DebuggingHandler implements IDebuggingHandler {
      * Determine if the debugger state has meaningfully changed
      */
     private hasStateChanged(beforeState: DebugState, afterState: DebugState): boolean {
+        // If we had location info before but don't now (and session is still active),
+        // this could be either:
+        // 1. Brief transition during stepping (will regain location info soon)
+        // 2. Process continued past all breakpoints (running state)
+        // Return false here to give the debugger time to settle. The caller
+        // (waitForStateChange) handles the timeout for case 2.
         if (beforeState.hasLocationInfo() && !afterState.hasLocationInfo() && afterState.sessionActive) {
             return false;
         }
