@@ -81,13 +81,17 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     }
                 }
 
-                console.log(`No configuration named '${configurationName}' found in launch.json`);
+                // Config name was specified but not found - throw error
+                throw new Error(`Configuration '${configurationName}' not found in ${workingDirectory}\\.vscode\\launch.json. Available configurations: ${launchConfig.configurations?.map((c: any) => c.name).join(', ') || 'none'}`);
             }
         } catch (launchJsonError) {
-            console.log('Could not read or parse launch.json:', launchJsonError);
+            // If a specific config was requested but launch.json doesn't exist or is invalid, fail
+            if (configurationName) {
+                throw new Error(`Could not find configuration '${configurationName}'. launch.json not found or invalid at ${workingDirectory}\\.vscode\\launch.json`);
+            }
         }
 
-        // Fallback: always return a default configuration if nothing else matched
+        // Fallback: return a default configuration only if no specific config was requested
         return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
     }
 
