@@ -49,10 +49,10 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             cleanJson = cleanJson.replace(/,(\s*[}\]])/g, '$1');
             const launchConfig = JSON.parse(cleanJson);
             
-            if (launchConfig.configurations && Array.isArray(launchConfig.configurations) && launchConfig.configurations.length > 0) {
-                // If a specific configuration name is provided, find it
-                if (configurationName) {
-                    const namedConfig = launchConfig.configurations.find((config: any) => 
+            if (configurationName) {
+                // First, check regular configurations
+                if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
+                    const namedConfig = launchConfig.configurations.find((config: any) =>
                         config.name === configurationName
                     );
                     if (namedConfig) {
@@ -61,14 +61,37 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                             name: `DebugMCP Launch (${configurationName})`
                         };
                     }
-                    console.log(`No configuration named '${configurationName}' found in launch.json`);
                 }
+
+                // Then, check compound configurations
+                if (launchConfig.compounds && Array.isArray(launchConfig.compounds)) {
+                    const compoundConfig = launchConfig.compounds.find((config: any) =>
+                        config.name === configurationName
+                    );
+                    if (compoundConfig) {
+                        // Return a special marker config for compound configurations
+                        // The executor will detect this and use the name directly with VS Code
+                        return {
+                            type: '__compound__',
+                            request: 'compound',
+                            name: configurationName,
+                            __isCompound: true,
+                            __compoundName: configurationName
+                        } as any;
+                    }
+                }
+
+                // Config name was specified but not found - throw error
+                throw new Error(`Configuration '${configurationName}' not found in ${workingDirectory}\\.vscode\\launch.json. Available configurations: ${launchConfig.configurations?.map((c: any) => c.name).join(', ') || 'none'}`);
             }
         } catch (launchJsonError) {
-            console.log('Could not read or parse launch.json:', launchJsonError);
+            // If a specific config was requested but launch.json doesn't exist or is invalid, fail
+            if (configurationName) {
+                throw new Error(`Could not find configuration '${configurationName}'. launch.json not found or invalid at ${workingDirectory}\\.vscode\\launch.json`);
+            }
         }
 
-        // Fallback: always return a default configuration if nothing else matched
+        // Fallback: return a default configuration only if no specific config was requested
         return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
     }
 

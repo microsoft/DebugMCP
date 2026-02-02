@@ -10,7 +10,7 @@ import { logger } from './utils/logger';
  * Interface for debugging handler operations
  */
 export interface IDebuggingHandler {
-    handleStartDebugging(args: { fileFullPath: string; workingDirectory: string; testName?: string }): Promise<string>;
+    handleStartDebugging(args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }): Promise<string>;
     handleStopDebugging(): Promise<string>;
     handleStepOver(): Promise<string>;
     handleStepInto(): Promise<string>;
@@ -44,15 +44,17 @@ export class DebuggingHandler implements IDebuggingHandler {
     /**
      * Start a debugging session
      */
-    public async handleStartDebugging(args: { 
-        fileFullPath: string; 
+    public async handleStartDebugging(args: {
+        fileFullPath: string;
         workingDirectory: string;
         testName?: string;
+        configurationName?: string;
     }): Promise<string> {
-        const { fileFullPath, workingDirectory, testName } = args;
-        
-        try {            
-            let selectedConfigName = await this.configManager.promptForConfiguration(workingDirectory);
+        const { fileFullPath, workingDirectory, testName, configurationName } = args;
+
+        try {
+            // Use provided configuration name or prompt user to select one
+            let selectedConfigName = configurationName || await this.configManager.promptForConfiguration(workingDirectory);
             
             // Get debug configuration from launch.json or create default
             const debugConfig = await this.configManager.getDebugConfig(
