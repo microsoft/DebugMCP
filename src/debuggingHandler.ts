@@ -51,9 +51,15 @@ export class DebuggingHandler implements IDebuggingHandler {
         configurationName?: string;
     }): Promise<string> {
         const { fileFullPath, workingDirectory, testName, configurationName } = args;
-        
-        try {            
-            let selectedConfigName = configurationName ?? await this.configManager.promptForConfiguration(workingDirectory);
+
+        try {
+            // If configurationName is provided, use it; otherwise prompt the user
+            let selectedConfigName: string | undefined;
+            if (configurationName) {
+                selectedConfigName = configurationName;
+            } else {
+                selectedConfigName = await this.configManager.promptForConfiguration(workingDirectory);
+            }
             
             // Get debug configuration from launch.json or create default
             const debugConfig = await this.configManager.getDebugConfig(
