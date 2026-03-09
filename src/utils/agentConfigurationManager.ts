@@ -38,7 +38,10 @@ export class AgentConfigurationManager {
      * Check if we should show the post-install popup
      */
     public async shouldShowPopup(): Promise<boolean> {
-        // Check if popup has already been shown
+        // Suppress popup if we are in Antigravity or it's already been shown
+        if (process.env.ANTIGRAVITY_ENV === 'true' || process.env.GEMINI_HOME) {
+            return false;
+        }
         const popupShown = this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false);
         return !popupShown;
     }
@@ -141,6 +144,13 @@ export class AgentConfigurationManager {
                 name: 'cursor',
                 displayName: 'Cursor',
                 configPath: path.join(configBasePath, 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'settings', 'mcp_settings.json'),
+                mcpServerFieldName: 'mcpServers'
+            },
+            {
+                id: 'antigravity',
+                name: 'antigravity',
+                displayName: 'Antigravity',
+                configPath: path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
                 mcpServerFieldName: 'mcpServers'
             }
         ];
