@@ -23,6 +23,7 @@ export interface IDebuggingExecutor {
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
+    resolveActiveFrameId(): Promise<number | null>;
 }
 
 /**
@@ -38,7 +39,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         config: vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
-            if (config.type === 'coreclr') {
+            if (config.type === 'coreclr' && config.request !== 'attach') {
                 // Open the specific test file instead of the workspace folder
                 const testFileUri = vscode.Uri.file(config.program);
                 await vscode.commands.executeCommand('vscode.open', testFileUri);
@@ -168,12 +169,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 state.sessionActive = true;
                 state.updateConfigurationName(activeSession.configuration.name ?? null);
                 
-                const activeStackItem = vscode.debug.activeStackItem;
-                if (activeStackItem && 'frameId' in activeStackItem) {
-                    state.updateContext(activeStackItem.frameId, activeStackItem.threadId);
-                    
+                // Resolve frame context — handles DebugStackFrame, DebugThread, and undefined activeStackItem
+                const frameContext = await this.resolveFrameContext(activeSession);
+                if (frameContext) {
+                    state.updateContext(frameContext.frameId, frameContext.threadId);
+
                     // Extract frame name from stack frame
-                    await this.extractFrameName(activeSession, activeStackItem.frameId, state);
+                    await this.extractFrameName(activeSession, frameContext.frameId, state);
                     
                     // Get the active editor
                     const activeEditor = vscode.window.activeTextEditor;
@@ -341,27 +343,98 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * Check if there's an active debug session that is ready for debugging operations
+     * Resolve the active frame context.
+     * Tries three strategies in order:
+     * 1. DebugStackFrame from activeStackItem (has frameId directly)
+     * 2. DebugThread from activeStackItem (resolve top frame via DAP stackTrace)
+     * 3. DAP threads request fallback (when activeStackItem is undefined)
+     * Returns null if no paused frame can be found.
      */
-    public async hasActiveSession(): Promise<boolean> {
-        // Quick check first - no session at all
-        if (!vscode.debug.activeDebugSession) {
-            return false;
+    private async resolveFrameContext(session: vscode.DebugSession): Promise<{ frameId: number; threadId: number } | null> {
+        const activeStackItem = vscode.debug.activeStackItem;
+
+        // Strategy 1: DebugStackFrame — frameId is directly available
+        if (activeStackItem && 'frameId' in activeStackItem) {
+            return { frameId: activeStackItem.frameId, threadId: activeStackItem.threadId };
         }
 
-        try {
-            // Get the current debug state and check if it has location information
-            // This is the most reliable way to determine if the debugger is truly ready
-            const debugState = await this.getCurrentDebugState();
-            
-            // A session is ready when it has location info (file name and line number)
-            // This means the debugger has attached and we can see where we are in the code
-            return debugState.sessionActive && debugState.hasLocationInfo();
-        } catch (error) {
-            // Any error means session isn't ready (e.g., Python still initializing)
-            console.log('Session readiness check failed:', error);
-            return false;
+        // Strategy 2: DebugThread — resolve top frame via DAP stackTrace
+        if (activeStackItem && 'threadId' in activeStackItem) {
+            const frame = await this.getTopFrameForThread(session, activeStackItem.threadId);
+            if (frame) {
+                return frame;
+            }
         }
+
+        // Strategy 3: activeStackItem is undefined — query DAP for threads directly
+        // and find the first thread that has a stack (i.e., is paused).
+        return await this.resolveFrameFromDAPThreads(session);
+    }
+
+    /**
+     * Get the top stack frame for a specific thread via DAP stackTrace request.
+     * Returns null if the thread is running (not paused).
+     */
+    private async getTopFrameForThread(session: vscode.DebugSession, threadId: number): Promise<{ frameId: number; threadId: number } | null> {
+        try {
+            const response = await session.customRequest('stackTrace', {
+                threadId,
+                startFrame: 0,
+                levels: 1
+            });
+            if (response?.stackFrames?.length > 0) {
+                return { frameId: response.stackFrames[0].id, threadId };
+            }
+        } catch {
+            // Thread is running or stackTrace not supported
+        }
+        return null;
+    }
+
+    /**
+     * Fallback: query DAP for all threads and find the first one with a valid stack frame.
+     * Used when activeStackItem is undefined (VS Code hasn't selected a thread).
+     */
+    private async resolveFrameFromDAPThreads(session: vscode.DebugSession): Promise<{ frameId: number; threadId: number } | null> {
+        try {
+            const threadsResponse = await session.customRequest('threads');
+            if (!threadsResponse?.threads?.length) {
+                return null;
+            }
+
+            for (const thread of threadsResponse.threads) {
+                const frame = await this.getTopFrameForThread(session, thread.id);
+                if (frame) {
+                    return frame;
+                }
+            }
+        } catch {
+            // threads request not supported or session not ready
+        }
+        return null;
+    }
+
+    /**
+     * Resolve the active frame ID, handling DebugStackFrame, DebugThread, and
+     * undefined activeStackItem. Returns null if no paused frame is available.
+     */
+    public async resolveActiveFrameId(): Promise<number | null> {
+        const session = vscode.debug.activeDebugSession;
+        if (!session) {
+            return null;
+        }
+        const context = await this.resolveFrameContext(session);
+        return context?.frameId ?? null;
+    }
+
+    /**
+     * Check if there's an active debug session.
+     * This only checks session existence (debug adapter is attached), NOT whether
+     * execution is paused at a frame. Use resolveActiveFrameId() to check for a
+     * paused frame when needed (e.g., before variable inspection or expression eval).
+     */
+    public async hasActiveSession(): Promise<boolean> {
+        return !!vscode.debug.activeDebugSession;
     }
 
     /**

@@ -343,12 +343,12 @@ export class DebuggingHandler implements IDebuggingHandler {
                 throw new Error('Debug session is not ready. Start debugging first and ensure execution is paused.');
             }
 
-            const activeStackItem = vscode.debug.activeStackItem;
-            if (!activeStackItem || !('frameId' in activeStackItem)) {
+            const frameId = await this.executor.resolveActiveFrameId();
+            if (frameId === null) {
                 throw new Error('No active stack frame. Make sure execution is paused at a breakpoint.');
             }
 
-            const variablesData = await this.executor.getVariables(activeStackItem.frameId, scope);
+            const variablesData = await this.executor.getVariables(frameId, scope);
             
             if (!variablesData.scopes || variablesData.scopes.length === 0) {
                 return 'No variable scopes available at current execution point.';
@@ -393,13 +393,13 @@ export class DebuggingHandler implements IDebuggingHandler {
                 throw new Error('Debug session is not ready. Start debugging first and ensure execution is paused.');
             }
 
-            const activeStackItem = vscode.debug.activeStackItem;
-            if (!activeStackItem || !('frameId' in activeStackItem)) {
+            const frameId = await this.executor.resolveActiveFrameId();
+            if (frameId === null) {
                 throw new Error('No active stack frame. Make sure execution is paused at a breakpoint.');
             }
 
-            const response = await this.executor.evaluateExpression(expression, activeStackItem.frameId);
-
+            const response = await this.executor.evaluateExpression(expression, frameId);
+            
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 resultText += `Result: ${response.result}`;
