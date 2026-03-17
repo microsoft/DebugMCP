@@ -32,13 +32,16 @@ export class DebuggingHandler implements IDebuggingHandler {
     private readonly numNextLines: number = 3;
     private readonly executionDelay: number = 300; // ms to wait for debugger updates
     private readonly timeoutInSeconds: number;
+    private readonly defaultConfigurationName?: string;
 
     constructor(
         private readonly executor: IDebuggingExecutor,
         private readonly configManager: IDebugConfigurationManager,
-        timeoutInSeconds: number
+        timeoutInSeconds: number,
+        defaultConfigurationName?: string
     ) {
         this.timeoutInSeconds = timeoutInSeconds;
+        this.defaultConfigurationName = defaultConfigurationName;
     }
 
     /**
@@ -53,7 +56,9 @@ export class DebuggingHandler implements IDebuggingHandler {
         const { fileFullPath, workingDirectory, testName, configurationName } = args;
         
         try {            
-            let selectedConfigName = configurationName ?? await this.configManager.promptForConfiguration(workingDirectory);
+            let selectedConfigName = configurationName
+                ?? this.defaultConfigurationName
+                ?? await this.configManager.promptForConfiguration(workingDirectory);
             
             // Get debug configuration from launch.json or create default
             const debugConfig = await this.configManager.getDebugConfig(
@@ -399,7 +404,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             }
 
             const response = await this.executor.evaluateExpression(expression, frameId);
-            
+
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 resultText += `Result: ${response.result}`;

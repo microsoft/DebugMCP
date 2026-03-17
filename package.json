@@ -76,6 +76,11 @@
           "type": "number",
           "default": 3001,
           "description": "Port number for the DebugMCP server"
+        },
+        "debugmcp.defaultConfigurationName": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the launch.json configuration to use by default. When set, skips the configuration picker. Leave empty to prompt each time."
         }
       }
     }
