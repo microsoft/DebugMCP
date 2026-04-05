@@ -148,6 +148,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             '.tsx': 'node',
             '.java': 'java',
             '.cs': 'coreclr',
+            '.csproj': 'coreclr',
             '.cpp': 'cppdbg',
             '.cc': 'cppdbg',
             '.c': 'cppdbg',
