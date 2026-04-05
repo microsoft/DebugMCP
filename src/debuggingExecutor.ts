@@ -38,13 +38,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         config: vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
-            if (config.type === 'coreclr') {
-                // Open the specific test file instead of the workspace folder
-                const testFileUri = vscode.Uri.file(config.program);
-                await vscode.commands.executeCommand('vscode.open', testFileUri);
-                vscode.commands.executeCommand('testing.debugCurrentFile');
-                return true;
-            }
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
             return await vscode.debug.startDebugging(workspaceFolder, config);
         } catch (error) {
