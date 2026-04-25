@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP",
   "description": "Let AI agents debug your code inside VS Code — breakpoints, step-through execution, variable inspection, and expression evaluation. Automatically exposes itself as an MCP (Model Context Protocol) server for seamless integration with AI assistants.",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
@@ -92,6 +92,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/express": "^5.0.3",
     "express": "^5.2.1",
+    "jsonc-parser": "^3.3.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

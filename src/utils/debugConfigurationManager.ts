@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as jsonc from 'jsonc-parser';
 
 /**
  * Interface for configuration management operations
@@ -43,11 +44,8 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
             const launchJsonContent = launchJsonDoc.getText();
             
-            // Parse the JSON (removing comments and trailing commas first)
-            let cleanJson = launchJsonContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-            // Remove trailing commas before closing brackets/braces
-            cleanJson = cleanJson.replace(/,(\s*[}\]])/g, '$1');
-            const launchConfig = JSON.parse(cleanJson);
+            // Parse JSONC (JSON with comments and trailing commas)
+            const launchConfig = jsonc.parse(launchJsonContent);
             
             if (launchConfig.configurations && Array.isArray(launchConfig.configurations) && launchConfig.configurations.length > 0) {
                 // If a specific configuration name is provided, find it
@@ -150,6 +148,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             '.tsx': 'node',
             '.java': 'java',
             '.cs': 'coreclr',
+            '.csproj': 'coreclr',
             '.cpp': 'cppdbg',
             '.cc': 'cppdbg',
             '.c': 'cppdbg',
@@ -259,11 +258,8 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
             const launchJsonContent = launchJsonDoc.getText();
             
-            // Parse the JSON (removing comments and trailing commas first)
-            let cleanJson = launchJsonContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-            // Remove trailing commas before closing brackets/braces
-            cleanJson = cleanJson.replace(/,(\s*[}\]])/g, '$1');
-            const launchConfig = JSON.parse(cleanJson);
+            // Parse JSONC (JSON with comments and trailing commas)
+            const launchConfig = jsonc.parse(launchJsonContent);
             
             if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
                 return launchConfig.configurations.map((config: any) => config.name || 'Unnamed Configuration');

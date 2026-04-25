@@ -38,13 +38,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         config: vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
-            if (config.type === 'coreclr') {
-                // Open the specific test file instead of the workspace folder
-                const testFileUri = vscode.Uri.file(config.program);
-                await vscode.commands.executeCommand('vscode.open', testFileUri);
-                vscode.commands.executeCommand('testing.debugCurrentFile');
-                return true;
-            }
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
             return await vscode.debug.startDebugging(workspaceFolder, config);
         } catch (error) {
@@ -344,24 +337,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Check if there's an active debug session that is ready for debugging operations
      */
     public async hasActiveSession(): Promise<boolean> {
-        // Quick check first - no session at all
-        if (!vscode.debug.activeDebugSession) {
-            return false;
-        }
-
-        try {
-            // Get the current debug state and check if it has location information
-            // This is the most reliable way to determine if the debugger is truly ready
-            const debugState = await this.getCurrentDebugState();
-            
-            // A session is ready when it has location info (file name and line number)
-            // This means the debugger has attached and we can see where we are in the code
-            return debugState.sessionActive && debugState.hasLocationInfo();
-        } catch (error) {
-            // Any error means session isn't ready (e.g., Python still initializing)
-            console.log('Session readiness check failed:', error);
-            return false;
-        }
+        return vscode.debug.activeDebugSession !== undefined;
     }
 
     /**
