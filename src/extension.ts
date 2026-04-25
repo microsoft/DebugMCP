@@ -41,7 +41,12 @@ export async function activate(context: vscode.ExtensionContext) {
         
         const endpoint = mcpServer.getEndpoint();
         logger.info(`DebugMCP server running at: ${endpoint}`);
-        vscode.window.showInformationMessage(`DebugMCP server running on ${endpoint}`);
+
+        const hasShownRunningMessage = context.globalState.get<boolean>('serverRunningMessageShown', false);
+        if (!hasShownRunningMessage) {
+            vscode.window.showInformationMessage(`DebugMCP server running on ${endpoint}`);
+            await context.globalState.update('serverRunningMessageShown', true);
+        }
     } catch (error) {
         logger.error('Failed to initialize MCP server', error);
         vscode.window.showErrorMessage(`Failed to initialize MCP server: ${error}`);
