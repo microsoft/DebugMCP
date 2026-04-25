@@ -32,13 +32,16 @@ export class DebuggingHandler implements IDebuggingHandler {
     private readonly numNextLines: number = 3;
     private readonly executionDelay: number = 300; // ms to wait for debugger updates
     private readonly timeoutInSeconds: number;
+    private readonly defaultConfigurationName?: string;
 
     constructor(
         private readonly executor: IDebuggingExecutor,
         private readonly configManager: IDebugConfigurationManager,
-        timeoutInSeconds: number
+        timeoutInSeconds: number,
+        defaultConfigurationName?: string
     ) {
         this.timeoutInSeconds = timeoutInSeconds;
+        this.defaultConfigurationName = defaultConfigurationName;
     }
 
     /**
@@ -53,7 +56,9 @@ export class DebuggingHandler implements IDebuggingHandler {
         const { fileFullPath, workingDirectory, testName, configurationName } = args;
         
         try {            
-            let selectedConfigName = configurationName ?? await this.configManager.promptForConfiguration(workingDirectory);
+            let selectedConfigName = configurationName
+                ?? this.defaultConfigurationName
+                ?? await this.configManager.promptForConfiguration(workingDirectory);
             
             // Get debug configuration from launch.json or create default
             const debugConfig = await this.configManager.getDebugConfig(
@@ -343,12 +348,12 @@ export class DebuggingHandler implements IDebuggingHandler {
                 throw new Error('Debug session is not ready. Start debugging first and ensure execution is paused.');
             }
 
-            const activeStackItem = vscode.debug.activeStackItem;
-            if (!activeStackItem || !('frameId' in activeStackItem)) {
+            const frameId = await this.executor.resolveActiveFrameId();
+            if (frameId === null) {
                 throw new Error('No active stack frame. Make sure execution is paused at a breakpoint.');
             }
 
-            const variablesData = await this.executor.getVariables(activeStackItem.frameId, scope);
+            const variablesData = await this.executor.getVariables(frameId, scope);
             
             if (!variablesData.scopes || variablesData.scopes.length === 0) {
                 return 'No variable scopes available at current execution point.';
@@ -393,12 +398,12 @@ export class DebuggingHandler implements IDebuggingHandler {
                 throw new Error('Debug session is not ready. Start debugging first and ensure execution is paused.');
             }
 
-            const activeStackItem = vscode.debug.activeStackItem;
-            if (!activeStackItem || !('frameId' in activeStackItem)) {
+            const frameId = await this.executor.resolveActiveFrameId();
+            if (frameId === null) {
                 throw new Error('No active stack frame. Make sure execution is paused at a breakpoint.');
             }
 
-            const response = await this.executor.evaluateExpression(expression, activeStackItem.frameId);
+            const response = await this.executor.evaluateExpression(expression, frameId);
 
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;

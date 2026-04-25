@@ -17,9 +17,13 @@ export async function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);
     const serverPort = config.get<number>('serverPort', 3001);
+    const defaultConfigurationName = config.get<string>('defaultConfigurationName', '') || undefined;
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
+    if (defaultConfigurationName) {
+        logger.info(`Using default configuration: ${defaultConfigurationName}`);
+    }
 
     // Initialize Agent Configuration Manager
     agentConfigManager = new AgentConfigurationManager(context, timeoutInSeconds, serverPort);
@@ -35,7 +39,7 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
         logger.info('Starting MCP server initialization...');
         
-        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds);
+        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds, defaultConfigurationName);
         await mcpServer.initialize();
         await mcpServer.start();
         

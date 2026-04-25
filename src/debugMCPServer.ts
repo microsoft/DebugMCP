@@ -27,11 +27,11 @@ export class DebugMCPServer {
     private debuggingHandler: IDebuggingHandler;
     private transports: Map<string, StreamableHTTPServerTransport> = new Map();
 
-    constructor(port: number, timeoutInSeconds: number) {
+    constructor(port: number, timeoutInSeconds: number, defaultConfigurationName?: string) {
         // Initialize the debugging components with dependency injection
         const executor = new DebuggingExecutor();
         const configManager = new ConfigurationManager();
-        this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
+        this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds, defaultConfigurationName);
         this.port = port;
     }
 
