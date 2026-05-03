@@ -5,13 +5,24 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-export interface AgentInfo {
+export interface BaseAgentInfo {
     id: string;
     name: string;
     displayName: string;
     configPath: string;
+    configFormat: 'json' | 'toml';
+}
+
+export interface JsonAgentInfo extends BaseAgentInfo {
+    configFormat: 'json';
     mcpServerFieldName: string; 
 }
+
+export interface TomlAgentInfo extends BaseAgentInfo {
+    configFormat: 'toml';
+}
+
+export type AgentInfo = JsonAgentInfo | TomlAgentInfo;
 
 export interface MCPServerConfig {
     autoApprove: string[];
@@ -19,6 +30,57 @@ export interface MCPServerConfig {
     timeout: number;
     type: string;
     url: string;
+}
+
+export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: string): string {
+    const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
+    const lines = normalizedConfigContent.split('\n');
+    const escapedUrl = escapeTomlString(mcpServerUrl);
+    const debugMCPSectionIndex = lines.findIndex(line => isCodexDebugMCPSectionHeader(line));
+
+    if (debugMCPSectionIndex === -1) {
+        const separator = normalizedConfigContent.length === 0
+            ? ''
+            : normalizedConfigContent.endsWith('\n') ? '\n' : '\n\n';
+
+        return `${normalizedConfigContent}${separator}[mcp_servers.debugmcp]\nurl = "${escapedUrl}"\n`;
+    }
+
+    const nextSectionIndex = findNextTomlSectionIndex(lines, debugMCPSectionIndex + 1);
+    const debugMCPSectionEndIndex = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
+
+    for (let index = debugMCPSectionIndex + 1; index < debugMCPSectionEndIndex; index++) {
+        const urlMatch = lines[index].match(/^(\s*)url\s*=.*$/);
+        if (urlMatch) {
+            lines[index] = `${urlMatch[1]}url = "${escapedUrl}"`;
+            return lines.join('\n');
+        }
+    }
+
+    lines.splice(debugMCPSectionIndex + 1, 0, `url = "${escapedUrl}"`);
+    return lines.join('\n');
+}
+
+function escapeTomlString(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function findNextTomlSectionIndex(lines: string[], startIndex: number): number {
+    for (let index = startIndex; index < lines.length; index++) {
+        if (isTomlSectionHeader(lines[index])) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
+function isTomlSectionHeader(line: string): boolean {
+    return /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/.test(line);
+}
+
+function isCodexDebugMCPSectionHeader(line: string): boolean {
+    return /^\s*\[mcp_servers\.debugmcp\]\s*(?:#.*)?$/.test(line);
 }
 
 export class AgentConfigurationManager {
@@ -115,6 +177,11 @@ export class AgentConfigurationManager {
         }
     }
 
+    private getCodexConfigPath(): string {
+        const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+        return path.join(codexHome, 'config.toml');
+    }
+
     /**
      * Get list of supported agents
      */
@@ -130,6 +197,7 @@ export class AgentConfigurationManager {
                 name: 'cline',
                 displayName: 'Cline',
                 configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'settings', 'cline_mcp_settings.json'),
+                configFormat: 'json',
                 mcpServerFieldName: 'mcpServers'
             },
             {
@@ -137,6 +205,7 @@ export class AgentConfigurationManager {
                 name: 'copilot',
                 displayName: 'GitHub Copilot',
                 configPath: path.join(configBasePath, 'Code', 'User', 'mcp.json'),
+                configFormat: 'json',
                 mcpServerFieldName: 'servers'
             },
             {
@@ -144,6 +213,7 @@ export class AgentConfigurationManager {
                 name: 'cursor',
                 displayName: 'Cursor',
                 configPath: path.join(configBasePath, 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'settings', 'mcp_settings.json'),
+                configFormat: 'json',
                 mcpServerFieldName: 'mcpServers'
             },
             {
@@ -151,7 +221,15 @@ export class AgentConfigurationManager {
                 name: 'antigravity',
                 displayName: 'Antigravity',
                 configPath: path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
+                configFormat: 'json',
                 mcpServerFieldName: 'mcpServers'
+            },
+            {
+                id: 'codex',
+                name: 'codex',
+                displayName: 'Codex',
+                configPath: this.getCodexConfigPath(),
+                configFormat: 'toml'
             }
         ];
 
@@ -167,8 +245,12 @@ export class AgentConfigurationManager {
             disabled: false,
             timeout: this.timeoutInSeconds,
             type: "streamableHttp",
-            url: `http://localhost:${this.serverPort}/mcp`
+            url: this.getMCPServerUrl()
         };
+    }
+
+    private getMCPServerUrl(): string {
+        return `http://localhost:${this.serverPort}/mcp`;
     }
 
     /**
@@ -186,6 +268,22 @@ export class AgentConfigurationManager {
                 }
 
                 const configContent = await fs.promises.readFile(agent.configPath, 'utf8');
+
+                if (agent.configFormat === 'toml') {
+                    if (this.shouldMigrateCodexConfig(configContent)) {
+                        await fs.promises.writeFile(
+                            agent.configPath,
+                            upsertCodexDebugMCPConfig(configContent, this.getMCPServerUrl()),
+                            'utf8'
+                        );
+
+                        migrationCount++;
+                        console.log(`Successfully migrated ${agent.displayName} configuration`);
+                    }
+
+                    continue;
+                }
+
                 let config: any;
                 
                 try {
@@ -241,6 +339,27 @@ export class AgentConfigurationManager {
         }
     }
 
+    private shouldMigrateCodexConfig(configContent: string): boolean {
+        const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
+        const lines = normalizedConfigContent.split('\n');
+        const debugMCPSectionIndex = lines.findIndex(line => isCodexDebugMCPSectionHeader(line));
+
+        if (debugMCPSectionIndex === -1) {
+            return false;
+        }
+
+        const nextSectionIndex = findNextTomlSectionIndex(lines, debugMCPSectionIndex + 1);
+        const debugMCPSectionEndIndex = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
+
+        for (let index = debugMCPSectionIndex + 1; index < debugMCPSectionEndIndex; index++) {
+            if (/^\s*url\s*=.*\/sse["']?\s*(?:#.*)?$/.test(lines[index])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Add DebugMCP server configuration to the specified agent's config
      */
@@ -250,6 +369,21 @@ export class AgentConfigurationManager {
             const configDir = path.dirname(agent.configPath);
             if (!fs.existsSync(configDir)) {
                 await fs.promises.mkdir(configDir, { recursive: true });
+            }
+
+            if (agent.configFormat === 'toml') {
+                const configContent = fs.existsSync(agent.configPath)
+                    ? await fs.promises.readFile(agent.configPath, 'utf8')
+                    : '';
+
+                await fs.promises.writeFile(
+                    agent.configPath,
+                    upsertCodexDebugMCPConfig(configContent, this.getMCPServerUrl()),
+                    'utf8'
+                );
+
+                console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
+                return true;
             }
 
             let config: any = {};

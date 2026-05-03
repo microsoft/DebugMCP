@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, Cursor) to connect to the DebugMCP server. Provides a seamless onboarding experience.
+Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, Cursor, Codex) to connect to the DebugMCP server. Provides a seamless onboarding experience.
 
 ## Motivation
 
@@ -23,6 +23,7 @@ For AI agents to use DebugMCP, they need MCP server configuration in their setti
 | Cline | `cline_mcp_settings.json` | `mcpServers` |
 | GitHub Copilot | `mcp.json` | `servers` |
 | Cursor | `mcp_settings.json` | `mcpServers` |
+| Codex | `~/.codex/config.toml` or `${CODEX_HOME}/config.toml` | `mcp_servers.debugmcp` |
 
 ## Key Concepts
 
@@ -48,6 +49,12 @@ The configuration written to agent settings:
 }
 ```
 
+Codex uses TOML:
+```toml
+[mcp_servers.debugmcp]
+url = "http://localhost:3001/mcp"
+```
+
 ### Popup State
 
 Uses VS Code's `globalState` to track whether the onboarding popup has been shown, preventing repeated prompts on every activation.
@@ -57,6 +64,7 @@ Uses VS Code's `globalState` to track whether the onboarding popup has been show
 - Class definition: `src/utils/agentConfigurationManager.ts`
 - Agent definitions: `getSupportedAgents()`
 - Config writing: `addDebugMCPToAgent()`
+- Codex TOML upsert: `upsertCodexDebugMCPConfig()`
 - Path detection: `getConfigBasePath()`
 - Popup logic: `shouldShowPopup()`, `showAgentSelectionPopup()`
 

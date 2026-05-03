@@ -1,6 +1,6 @@
 # DebugMCP (MCP Server) - Empowering AI Agents with Multi-Language Debugging Capabilities
 
-Let AI agents debug your code inside VS Code — set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **GitHub Copilot**, **Cline**, **Cursor**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
+Let AI agents debug your code inside VS Code — set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
 
 > **📢 Beta Version Notice**: This is a beta version of DebugMCP maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
@@ -173,6 +173,18 @@ Add to Cursor's MCP settings:
     }
   }
 }
+```
+
+#### Codex
+Register DebugMCP with Codex:
+```bash
+codex mcp add debugmcp --url http://localhost:3001/mcp
+```
+
+Or add the equivalent configuration to `~/.codex/config.toml` (`${CODEX_HOME}/config.toml` if `CODEX_HOME` is set):
+```toml
+[mcp_servers.debugmcp]
+url = "http://localhost:3001/mcp"
 ```
 
 ### Extension Settings
