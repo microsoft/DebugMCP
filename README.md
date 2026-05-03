@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/microsoft-debugmcp-badge.png)](https://mseep.ai/app/microsoft-debugmcp)
+
 # DebugMCP (MCP Server) - Empowering AI Agents with Multi-Language Debugging Capabilities
 
 Let AI agents debug your code inside VS Code — set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
