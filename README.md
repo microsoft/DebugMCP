@@ -1,19 +1,21 @@
-# DebugMCP (MCP Server) - Empowering AI Agents with Multi-Language Debugging Capabilities
+# DebugMCP (MCP Server) - Empowering AI Agents with Operational Debugging Capabilities
 
-Let AI agents debug your code inside VS Code — set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
-
-> **📢 Beta Version Notice**: This is a beta version of DebugMCP maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
+Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-1.0.9-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-1.1.3-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
-> Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
+> ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
+
+> 🎬 Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
 
 <p align="center">
-  <img src="assets/DebugMCP.webp" alt="DebugMCP Demo" width="800">
+  <img src="assets/DebugMCP.gif" width="800">
 </p>
+
+> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
 ## 🚀 Quick Install
 
@@ -24,9 +26,12 @@ Let AI agents debug your code inside VS Code — set breakpoints, step through e
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Supported AI Assistants](#supported-ai-assistants)
 - [Supported Languages](#supported-languages)
 - [Configuration](#configuration)
+- [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
+- [How It Works](#how-it-works)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -105,6 +110,21 @@ After installation, you should see:
 2. **Open your project** in VSCode
 3. **Ask your AI to debug** - it can now set breakpoints, start debugging, and analyze your code!
 
+## Supported AI Assistants
+
+DebugMCP works with any MCP-compatible AI assistant. It auto-detects and offers to register itself with:
+
+| Assistant | Auto-Registration | Manual Config |
+|-----------|:-----------------:|:-------------:|
+| **GitHub Copilot** | ✅ | [See config](#github-copilot) |
+| **Cline** | ✅ | [See config](#cline) |
+| **Cursor** | ✅ | [See config](#cursor) |
+| **Codex** | ✅ | [See config](#codex) |
+| **Windsurf** | ✅ | [See config](#windsurf) |
+| **Roo Code** | ✅ | [See config](#roo-code) |
+| **Antigravity** | ✅ | [See config](#antigravity) |
+| Any MCP-compatible assistant | — | [See manual setup](#manual-mcp-server-registration-optional) |
+
 ## Supported Languages
 
 DebugMCP supports debugging for the following languages with their respective VSCode extensions:
@@ -119,13 +139,16 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **Rust** | [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) | `.rs` | ✅ Fully Supported |
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
 | **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
-| **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs` | ✅ Fully Supported |
+| **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs`, `.csproj` | ✅ Fully Supported |
 
 ## Configuration
 
 ### MCP Server Configuration (Recommended)
 
 The extension runs an MCP server automatically. It will pop up a message to auto-register the MCP server in your AI assistant.
+
+You can also trigger the registration manually via the Command Palette:
+- **`DebugMCP: Show Agent Selection Popup`**
 
 ### Manual MCP Server Registration (Optional)
 
@@ -187,6 +210,48 @@ Or add the equivalent configuration to `~/.codex/config.toml` (`${CODEX_HOME}/co
 url = "http://localhost:3001/mcp"
 ```
 
+#### Windsurf
+Add to Windsurf's MCP settings (`~/.windsurf/mcp_settings.json` or workspace `.windsurf/mcp_settings.json`):
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3001/mcp",
+      "description": "DebugMCP - Debugging tools for AI assistants"
+    }
+  }
+}
+```
+
+#### Roo Code
+Add to Roo Code's MCP settings:
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3001/mcp",
+      "description": "DebugMCP - Debugging tools for AI assistants"
+    }
+  }
+}
+```
+
+#### Antigravity
+Add to Antigravity's MCP settings:
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3001/mcp",
+      "description": "DebugMCP - Debugging tools for AI assistants"
+    }
+  }
+}
+```
+
 ### Extension Settings
 
 Configure DebugMCP behavior in VSCode settings:
@@ -209,7 +274,7 @@ Configure DebugMCP behavior in VSCode settings:
 <details>
 <summary><b>Which AI assistants are supported?</b></summary>
 
-DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **Cline**, **Cursor**, **Roo Code**, **Windsurf**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP.
+DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **Cline**, **Cursor**, **Codex**, **Windsurf**, **Roo Code**, **Antigravity**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP.
 </details>
 
 <details>
@@ -248,6 +313,12 @@ Yes. Pass the `testName` parameter to `start_debugging` to debug a specific test
 Make sure DebugMCP is registered in your AI assistant's MCP settings. The extension should auto-detect and offer to register itself. If not, see the [Manual MCP Server Registration](#manual-mcp-server-registration-optional) section. Also enable auto-approval for DebugMCP tools for a smoother workflow.
 </details>
 
+<details>
+<summary><b>Does it support ASP.NET / .csproj projects?</b></summary>
+
+Yes. DebugMCP supports `.cs` files and `.csproj` project files for C#/.NET debugging, including ASP.NET applications.
+</details>
+
 ## Troubleshooting
 
 ### Common Issues
@@ -259,6 +330,19 @@ Make sure DebugMCP is registered in your AI assistant's MCP settings. The extens
   - Restart VSCode
   - Verify extension is installed and activated
 
+#### Debug Session Not Stopping at Breakpoints
+- **Symptom**: Breakpoints are set but execution doesn't pause
+- **Solution**:
+  - Ensure the correct file is being debugged
+  - Check that the breakpoint line content matches exactly
+  - Verify the relevant language debugger extension is installed
+
+#### Configuration Not Auto-Detected
+- **Symptom**: Extension doesn't prompt to register with your AI assistant
+- **Solution**:
+  - Run **`DebugMCP: Show Agent Selection Popup`** from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+  - Manually add the configuration (see [Manual MCP Server Registration](#manual-mcp-server-registration-optional))
+
 ## How It Works
 
 ### Architecture
@@ -267,14 +351,21 @@ Make sure DebugMCP is registered in your AI assistant's MCP settings. The extens
   <img src="assets/architecture.png" alt="DebugMCP Architecture" width="800">
 </p>
 
+```
+AI Agent (Copilot/Cline/Cursor/Codex) → MCP/Streamable HTTP → DebugMCPServer → DebuggingHandler → VS Code Debug API
+```
+
 ### Launch Configuration Integration
 The extension handles debug configurations intelligently:
 
 - **Existing launch.json**: If a `.vscode/launch.json` file exists, it will:
    - Search for a relevant configuration
    - Use a specific configuration if found
+   - Support JSONC (JSON with comments and trailing commas)
 
-- **Default Configuration**: If no launch.json exists or no relevant config, it creates an appropriate default configurations for each language based on file extension detection
+- **Default Configuration**: If no launch.json exists or no relevant config, it creates an appropriate default configuration for each language based on file extension detection
+
+- **Named Configurations**: Use `configurationName` to target a specific launch.json configuration by name
 
 
 ## Requirements
@@ -289,7 +380,7 @@ The extension handles debug configurations intelligently:
   - **Rust**: [rust-analyzer extension](vscode:extension/rust-lang.rust-analyzer)
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
   - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
-- MCP-compatible AI assistant (Copilot, Cline, Roo..)
+- MCP-compatible AI assistant (Copilot, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
 
 ## Development
 
@@ -298,6 +389,18 @@ To build the extension:
 ```bash
 npm install
 npm run compile
+```
+
+To run linting:
+
+```bash
+npm run lint
+```
+
+To run tests:
+
+```bash
+npm test
 ```
 
 ## Contributing
@@ -327,7 +430,13 @@ trademarks or logos is subject to and must follow
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
 
-## ⭐ Star History
+## ⭐ Support DebugMCP
+
+If DebugMCP has helped you debug faster, please consider giving it a star on GitHub! Stars help the project gain visibility and attract contributors.
+
+**[⭐ Star DebugMCP on GitHub](https://github.com/microsoft/DebugMCP)**
+
+### Star History
 
 <a href="https://star-history.com/#microsoft/DebugMCP&Date">
  <picture>
