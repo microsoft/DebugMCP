@@ -1,8 +1,6 @@
-# DebugMCP (MCP Server) - Empowering AI Agents with Multi-Language Debugging Capabilities
+# DebugMCP (MCP Server) - Empowering AI Agents with Operational Debugging Capabilities
 
-Let AI agents debug your code inside VS Code — set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
-
-> **📢 Beta Version Notice**: This is a beta version of DebugMCP maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
+Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
@@ -11,11 +9,13 @@ Let AI agents debug your code inside VS Code — set breakpoints, step through e
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
 
-> Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
+> 🎬 Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
 
 <p align="center">
   <img src="assets/DebugMCP.gif" width="800">
 </p>
+
+> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
 ## 🚀 Quick Install
 
