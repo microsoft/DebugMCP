@@ -45,7 +45,7 @@ AI Agent (MCP Client)
 Uses stateless HTTP POST requests for MCP communication. The express server exposes:
 - `POST /mcp` — Handles all MCP protocol messages (JSON-RPC over HTTP)
 
-Each request creates a new `StreamableHTTPServerTransport` instance in stateless mode, which is cleaned up when the response closes. This approach is simpler than session-based transports and works well with standard HTTP clients.
+Each request creates a new stateless `StreamableHTTPServerTransport` instance that is closed when the HTTP response closes. The server returns JSON-RPC error responses (not HTML pages) for malformed payloads or unsupported methods to keep client behavior predictable.
 
 ## Key Code Locations
 

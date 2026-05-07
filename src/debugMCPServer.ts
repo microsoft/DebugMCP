@@ -25,7 +25,6 @@ export class DebugMCPServer {
     private port: number;
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
-    private transports: Map<string, StreamableHTTPServerTransport> = new Map();
 
     constructor(port: number, timeoutInSeconds: number) {
         // Initialize the debugging components with dependency injection
@@ -87,8 +86,8 @@ export class DebugMCPServer {
                     'Leave empty to debug the entire file or test class.'
                 ),
                 configurationName: z.string().optional().describe(
-                    'Name of a specific debug configuration from launch.json to use. ' +
-                    'Leave empty to be prompted to select a configuration interactively.'
+                    'Optional debug configuration name from launch.json. ' +
+                    'If omitted, DebugMCP uses its default generated configuration.'
                 ),
             },
         }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) => {
@@ -329,26 +328,70 @@ export class DebugMCPServer {
             // Parse JSON body for incoming requests
             app.use(express.json());
 
+            // Return JSON instead of HTML for malformed request bodies.
+            app.use((error: any, _req: any, res: any, next: any) => {
+                if (error && error.type === 'entity.parse.failed') {
+                    res.status(400).json({
+                        jsonrpc: '2.0',
+                        error: {
+                            code: -32700,
+                            message: 'Parse error: invalid JSON body'
+                        }
+                    });
+                    return;
+                }
+                next(error);
+            });
+
             // Streamable HTTP endpoint — handles MCP protocol messages
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
-                
-                // Create a new transport for each request (stateless mode)
+
                 const transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: undefined, // Stateless mode - no session management
                 });
-
-                // Clean up transport when response closes
                 res.on('close', () => {
                     transport.close();
                     logger.info('MCP transport closed');
                 });
 
-                // Connect the MCP server to this transport
-                await this.mcpServer!.connect(transport);
-                
-                // Handle the incoming request
-                await transport.handleRequest(req, res, req.body);
+                try {
+                    await this.mcpServer!.connect(transport);
+                    await transport.handleRequest(req, res, req.body);
+                } catch (error) {
+                    logger.error('Error while handling MCP request', error);
+                    if (!res.headersSent) {
+                        res.status(500).json({
+                            jsonrpc: '2.0',
+                            error: {
+                                code: -32603,
+                                message: 'Internal MCP server error'
+                            }
+                        });
+
+                        app.get('/mcp', async (_req: any, res: any) => {
+                            res.status(405).json({
+                                jsonrpc: '2.0',
+                                error: {
+                                    code: -32000,
+                                    message: 'Method not allowed. Use POST /mcp.'
+                                },
+                                id: null
+                            });
+                        });
+
+                        app.delete('/mcp', async (_req: any, res: any) => {
+                            res.status(405).json({
+                                jsonrpc: '2.0',
+                                error: {
+                                    code: -32000,
+                                    message: 'Method not allowed. Use POST /mcp.'
+                                },
+                                id: null
+                            });
+                        });
+                    }
+                }
             });
 
             // Legacy SSE endpoint for backward compatibility
@@ -381,10 +424,6 @@ export class DebugMCPServer {
      * Stop the MCP server
      */
     async stop() {
-        // Note: With stateless StreamableHTTPServerTransport, transports are closed per-request
-        // No need to track and close them manually
-        this.transports.clear();
-
         // Close the HTTP server
         if (this.httpServer) {
             await new Promise<void>((resolve) => {

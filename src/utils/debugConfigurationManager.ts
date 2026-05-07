@@ -15,7 +15,6 @@ export interface IDebugConfigurationManager {
         configurationName?: string,
         testName?: string
     ): Promise<vscode.DebugConfiguration>;
-    promptForConfiguration(workingDirectory: string): Promise<string | undefined>;
     detectLanguageFromFilePath(fileFullPath: string): string;
 }
 
@@ -23,7 +22,7 @@ export interface IDebugConfigurationManager {
  * Responsible for managing debug configurations and workspace detection
  */
 export class DebugConfigurationManager implements IDebugConfigurationManager {
-    private static readonly AUTO_LAUNCH_CONFIG = 'Default Configuration';
+	private static readonly AUTO_LAUNCH_CONFIG = 'Default Configuration';
 
     /**
      * Get or create a debug configuration for the given parameters
@@ -34,33 +33,18 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         configurationName?: string,
         testName?: string
     ): Promise<vscode.DebugConfiguration> {
-        if (configurationName === DebugConfigurationManager.AUTO_LAUNCH_CONFIG) {
+        if (!configurationName || configurationName.trim() === '' || configurationName === DebugConfigurationManager.AUTO_LAUNCH_CONFIG) {
             return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
         }
 
         try {
-            // Look for launch.json in .vscode folder
-            const launchJsonPath = vscode.Uri.joinPath(vscode.Uri.file(workingDirectory), '.vscode', 'launch.json');
-            const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
-            const launchJsonContent = launchJsonDoc.getText();
-            
-            // Parse JSONC (JSON with comments and trailing commas)
-            const launchConfig = jsonc.parse(launchJsonContent);
-            
-            if (launchConfig.configurations && Array.isArray(launchConfig.configurations) && launchConfig.configurations.length > 0) {
-                // If a specific configuration name is provided, find it
-                if (configurationName) {
-                    const namedConfig = launchConfig.configurations.find((config: any) => 
-                        config.name === configurationName
-                    );
-                    if (namedConfig) {
-                        return {
-                            ...namedConfig,
-                            name: `DebugMCP Launch (${configurationName})`
-                        };
-                    }
-                    console.log(`No configuration named '${configurationName}' found in launch.json`);
-                }
+            const launchConfigurations = await this.getLaunchConfigurations(workingDirectory);
+            const namedConfiguration = launchConfigurations.find(config => config?.name === configurationName);
+            if (namedConfiguration) {
+                return {
+                    ...namedConfiguration,
+                    name: `DebugMCP Launch (${namedConfiguration.name || 'Workspace Configuration'})`
+                };
             }
         } catch (launchJsonError) {
             console.log('Could not read or parse launch.json:', launchJsonError);
@@ -70,68 +54,21 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
     }
 
-    /**
-     * Prompt user to select a debug configuration
-     */
-    public async promptForConfiguration(workingDirectory: string): Promise<string | undefined> {
-        try {
-            // Look for launch.json in .vscode folder
-            const launchJsonPath = vscode.Uri.joinPath(vscode.Uri.file(workingDirectory), '.vscode', 'launch.json');
-            
-            let configurations: any[] = [];
-            
-            try {
-                const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
-                const launchJsonContent = launchJsonDoc.getText();
-                
-                // Parse the JSON (removing comments and trailing commas first)
-                let cleanJson = launchJsonContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-                // Remove trailing commas before closing brackets/braces
-                cleanJson = cleanJson.replace(/,(\s*[}\]])/g, '$1');
-                const launchConfig = JSON.parse(cleanJson);
-                
-                if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
-                    configurations = launchConfig.configurations;
-                }
-            } catch (launchJsonError) {
-                console.log('Could not read or parse launch.json:', launchJsonError);
-            }
-            
-            // Always show popup now - even when no configurations exist
-            const configOptions: vscode.QuickPickItem[] = [];
-            
-            // Add existing configurations if any
-            if (configurations.length > 0) {
-                configOptions.push(...configurations.map(config => ({
-                    label: config.name || 'Unnamed Configuration',
-                    description: config.type ? `Type: ${config.type}` : '',
-                    detail: config.request ? `Request: ${config.request}` : ''
-                })));
-            }
-            
-            // Add AUTO_LAUNCH_CONFIG at the end
-            configOptions.push({
-                label: DebugConfigurationManager.AUTO_LAUNCH_CONFIG,
-                description: 'Use auto-detected default configuration (beta)',
-                detail: 'DebugMCP will create a default configuration based on file extension. This is a heuristic and may not always work as expected.'
-            });
-            
-            // Show quick pick to user
-            const selected = await vscode.window.showQuickPick(configOptions, {
-                placeHolder: 'Select a debug configuration to use',
-                title: 'Choose Debug Configuration'
-            });
-            
-            if (!selected) {
-                // User cancelled the selection
-                throw new Error('Debug configuration selection cancelled by user');
-            }
-                        
-            return selected.label;
-        } catch (error) {
-            console.log('Error prompting for configuration:', error);
-            throw error;
+    private async getLaunchConfigurations(workingDirectory: string): Promise<any[]> {
+        const launchJsonPath = vscode.Uri.joinPath(vscode.Uri.file(workingDirectory), '.vscode', 'launch.json');
+        const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
+        const launchJsonContent = launchJsonDoc.getText();
+        const launchConfig = jsonc.parse(launchJsonContent);
+
+        if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
+            return launchConfig.configurations;
         }
+
+        return [];
+    }
+
+    public static getAutoLaunchConfigName(): string {
+        return DebugConfigurationManager.AUTO_LAUNCH_CONFIG;
     }
 
     /**
@@ -443,10 +380,4 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         }
     }
 
-    /**
-     * Get the auto launch configuration name
-     */
-    public static getAutoLaunchConfigName(): string {
-        return DebugConfigurationManager.AUTO_LAUNCH_CONFIG;
-    }
 }
