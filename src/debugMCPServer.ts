@@ -11,6 +11,7 @@ import {
     DebuggingHandler,
     IDebuggingHandler
 } from '.';
+import { TestHostAutoAttacher } from './testHostAutoAttacher';
 import { logger } from './utils/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -26,12 +27,14 @@ export class DebugMCPServer {
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
     private transports: Map<string, StreamableHTTPServerTransport> = new Map();
+    private testHostAutoAttacher: TestHostAutoAttacher;
 
     constructor(port: number, timeoutInSeconds: number) {
         // Initialize the debugging components with dependency injection
         const executor = new DebuggingExecutor();
         const configManager = new ConfigurationManager();
         this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
+        this.testHostAutoAttacher = new TestHostAutoAttacher();
         this.port = port;
     }
 
@@ -384,6 +387,11 @@ export class DebugMCPServer {
         // Note: With stateless StreamableHTTPServerTransport, transports are closed per-request
         // No need to track and close them manually
         this.transports.clear();
+
+        // Dispose the testhost auto attacher
+        if (this.testHostAutoAttacher) {
+            this.testHostAutoAttacher.dispose();
+        }
 
         // Close the HTTP server
         if (this.httpServer) {

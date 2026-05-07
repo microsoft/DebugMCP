@@ -173,7 +173,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         const cwd = path.dirname(fileFullPath);
         
         // Build test-specific configurations based on language
-        if (testName && detectedLanguage !== 'coreclr') {
+        if (testName) {
             return await this.createTestDebugConfig(detectedLanguage, fileFullPath, cwd, testName);
         }
 
@@ -419,13 +419,16 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     name: `DebugMCP .NET Test: ${testName}`,
                     program: 'dotnet',
                     args: [
-                        'test',
-                        '--filter', `FullyQualifiedName~${testName}`,
-                        '--no-build'
+                        'test',                        
+                        '--no-build',
+                        '--filter', `FullyQualifiedName~${testName}`
                     ],
                     console: 'integratedTerminal',
                     cwd: cwd,
-                    stopAtEntry: false
+                    stopAtEntry: false,
+                    env: {
+                        VSTEST_HOST_DEBUG: '1'
+                    }
                 };
 
             default:
