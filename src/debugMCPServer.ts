@@ -28,6 +28,7 @@ export class DebugMCPServer {
     private debuggingHandler: IDebuggingHandler;
     private transports: Map<string, StreamableHTTPServerTransport> = new Map();
     private testHostAutoAttacher: TestHostAutoAttacher;
+    private allowNextTransport = true;
 
     constructor(port: number, timeoutInSeconds: number) {
         // Initialize the debugging components with dependency injection
@@ -351,16 +352,28 @@ export class DebugMCPServer {
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
 
-                const transport = new StreamableHTTPServerTransport({
-                    sessionIdGenerator: undefined, // Stateless mode - no session management
-                });
-                res.on('close', () => {
-                    transport.close();
-                    logger.info('MCP transport closed');
-                });
-
                 try {
+                    let waitCnt = 0;
+                    while (!this.allowNextTransport && waitCnt <= 15) {
+                        waitCnt++;
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    }
+
+                    if (!this.allowNextTransport) {
+                        throw new Error("Error wait for transport release");
+                    }
+
+                    const transport = new StreamableHTTPServerTransport({
+                        sessionIdGenerator: undefined, // Stateless mode - no session management
+                    });
+                    res.on('close', () => {
+                        transport.close();
+                        this.allowNextTransport = true;
+                        logger.info('MCP transport closed');
+                    });
+
                     await this.mcpServer!.connect(transport);
+                    this.allowNextTransport = false;
                     await transport.handleRequest(req, res, req.body);
                 } catch (error) {
                     logger.error('Error while handling MCP request', error);
