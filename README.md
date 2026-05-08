@@ -1,10 +1,10 @@
 # DebugMCP (MCP Server) - Empowering AI Agents with Operational Debugging Capabilities
 
-Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
+Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-1.1.3-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-1.1.4-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
@@ -117,6 +117,7 @@ DebugMCP works with any MCP-compatible AI assistant. It auto-detects and offers 
 | Assistant | Auto-Registration | Manual Config |
 |-----------|:-----------------:|:-------------:|
 | **GitHub Copilot** | ✅ | [See config](#github-copilot) |
+| **GitHub Copilot CLI** | ✅ | [See config](#github-copilot-cli) |
 | **Cline** | ✅ | [See config](#cline) |
 | **Cursor** | ✅ | [See config](#cursor) |
 | **Codex** | ✅ | [See config](#codex) |
@@ -179,6 +180,20 @@ Add to your VS Code settings (`settings.json`):
         "url": "http://localhost:3001/mcp",
         "description": "DebugMCP - Multi-language debugging support"
       }
+    }
+  }
+}
+```
+
+#### GitHub Copilot CLI
+Add to `~/.copilot/mcp-config.json` (`${COPILOT_HOME}/mcp-config.json` if `COPILOT_HOME` is set):
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp",
+      "tools": ["*"]
     }
   }
 }
@@ -274,7 +289,7 @@ Configure DebugMCP behavior in VSCode settings:
 <details>
 <summary><b>Which AI assistants are supported?</b></summary>
 
-DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **Cline**, **Cursor**, **Codex**, **Windsurf**, **Roo Code**, **Antigravity**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP.
+DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Codex**, **Windsurf**, **Roo Code**, **Antigravity**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP.
 </details>
 
 <details>
@@ -286,7 +301,7 @@ Yes. DebugMCP runs as a VS Code extension with `extensionKind: workspace`, so it
 <details>
 <summary><b>Do I need to configure launch.json?</b></summary>
 
-No. DebugMCP automatically generates appropriate debug configurations based on the file's language/extension. If you have a `launch.json`, it will use matching configurations from there. You can also specify a configuration by name using the `configurationName` parameter.
+No. DebugMCP automatically generates appropriate debug configurations based on the file's language/extension. If you have a `launch.json`, it will automatically pick the most relevant configuration.
 </details>
 
 <details>
@@ -360,13 +375,10 @@ The extension handles debug configurations intelligently:
 
 - **Existing launch.json**: If a `.vscode/launch.json` file exists, it will:
    - Search for a relevant configuration
-   - Use a specific configuration if found
+   - Honor `configurationName` when explicitly provided by the agent
    - Support JSONC (JSON with comments and trailing commas)
 
-- **Default Configuration**: If no launch.json exists or no relevant config, it creates an appropriate default configuration for each language based on file extension detection
-
-- **Named Configurations**: Use `configurationName` to target a specific launch.json configuration by name
-
+- **Default Configuration**: If `configurationName` is omitted, or if no matching named configuration is found, it creates an appropriate default configuration for each language based on file extension detection
 
 ## Requirements
 

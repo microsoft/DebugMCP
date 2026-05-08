@@ -25,11 +25,12 @@ export interface TomlAgentInfo extends BaseAgentInfo {
 export type AgentInfo = JsonAgentInfo | TomlAgentInfo;
 
 export interface MCPServerConfig {
-    autoApprove: string[];
-    disabled: boolean;
-    timeout: number;
     type: string;
     url: string;
+    autoApprove?: string[];
+    disabled?: boolean;
+    timeout?: number;
+    tools?: string[];
 }
 
 export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: string): string {
@@ -182,6 +183,11 @@ export class AgentConfigurationManager {
         return path.join(codexHome, 'config.toml');
     }
 
+    private getCopilotCliConfigPath(): string {
+        const copilotHome = process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot');
+        return path.join(copilotHome, 'mcp-config.json');
+    }
+
     /**
      * Get list of supported agents
      */
@@ -207,6 +213,14 @@ export class AgentConfigurationManager {
                 configPath: path.join(configBasePath, 'Code', 'User', 'mcp.json'),
                 configFormat: 'json',
                 mcpServerFieldName: 'servers'
+            },
+            {
+                id: 'copilot-cli',
+                name: 'copilot-cli',
+                displayName: 'GitHub Copilot CLI',
+                configPath: this.getCopilotCliConfigPath(),
+                configFormat: 'json',
+                mcpServerFieldName: 'mcpServers'
             },
             {
                 id: 'cursor',
@@ -239,7 +253,15 @@ export class AgentConfigurationManager {
     /**
      * Get DebugMCP server configuration with current port and timeout settings
      */
-    private getDebugMCPConfig(): MCPServerConfig {
+    private getDebugMCPConfig(agent?: AgentInfo): MCPServerConfig {
+        if (agent?.id === 'copilot-cli') {
+            return {
+            	type: 'http',
+            	url: this.getMCPServerUrl(),
+            	tools: ['*']
+            };
+        }
+
         return {
             autoApprove: [],
             disabled: false,
@@ -300,8 +322,9 @@ export class AgentConfigurationManager {
                 }
 
                 // Check if it's using the old SSE configuration
-                const needsMigration = 
-                    debugmcpConfig.type === 'sse' || 
+                const needsMigration = agent.id === 'copilot-cli'
+                    ? debugmcpConfig.type !== 'http' || (debugmcpConfig.url && debugmcpConfig.url.endsWith('/sse'))
+                    : debugmcpConfig.type === 'sse' ||
                     debugmcpConfig.type === 'http' ||
                     (debugmcpConfig.url && debugmcpConfig.url.endsWith('/sse'));
 
@@ -309,10 +332,10 @@ export class AgentConfigurationManager {
                     console.log(`Migrating DebugMCP configuration for ${agent.displayName} from SSE to streamableHttp`);
                     
                     // Update to new configuration
-                    config[fieldName].debugmcp = this.getDebugMCPConfig();
+                    config[fieldName].debugmcp = this.getDebugMCPConfig(agent);
                     
                     // Preserve any custom autoApprove settings
-                    if (debugmcpConfig.autoApprove && Array.isArray(debugmcpConfig.autoApprove)) {
+                    if (config[fieldName].debugmcp.autoApprove && debugmcpConfig.autoApprove && Array.isArray(debugmcpConfig.autoApprove)) {
                         config[fieldName].debugmcp.autoApprove = debugmcpConfig.autoApprove;
                     }
                     
@@ -406,7 +429,7 @@ export class AgentConfigurationManager {
             }
 
             // Add or update DebugMCP configuration with current settings
-            config[fieldName].debugmcp = this.getDebugMCPConfig();
+            config[fieldName].debugmcp = this.getDebugMCPConfig(agent);
 
             // Write the updated config back to file
             await fs.promises.writeFile(

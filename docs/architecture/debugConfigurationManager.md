@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Manages debug launch configurations - reading from `launch.json`, creating default configurations, and supporting test-specific debugging across multiple languages and test frameworks.
+Manages debug launch configurations by reading from `launch.json` for explicitly named configs, creating defaults when needed, and supporting test-specific debugging across multiple languages and test frameworks.
 
 ## Motivation
 
@@ -11,7 +11,8 @@ Different languages and test frameworks require different debug configurations. 
 ## Responsibility
 
 - Read and parse `.vscode/launch.json` configurations
-- Prompt users to select from available configurations
+- Auto-select the most relevant launch configuration for the target file/test
+- Respect an explicitly provided `configurationName` when supplied by the agent
 - Create default configurations when none exist
 - Detect programming language from file extensions
 - Generate test-specific configurations for various frameworks
@@ -47,11 +48,13 @@ Maps file extensions to debug types:
 | Java | JUnit |
 | .NET | xUnit, NUnit, MSTest |
 
-### User Prompt Flow
+### Configuration Selection Flow
 
-When starting debugging, users are prompted to:
-1. Select from existing launch.json configurations, OR
-2. Use "Default Configuration" (auto-detected)
+When starting debugging, the manager:
+1. Loads available launch.json configurations
+2. Scores configurations based on language/type/request/test relevance
+3. Selects the best match automatically
+4. Falls back to an auto-detected default configuration when needed
 
 ## Key Code Locations
 
@@ -60,7 +63,7 @@ When starting debugging, users are prompted to:
 - Default configs: `createDefaultDebugConfig()`
 - Test configs: `createTestDebugConfig()`
 - Language detection: `detectLanguageFromFilePath()`
-- User prompt: `promptForConfiguration()`
+- Configuration selection: `selectBestLaunchConfiguration()`
 
 ## JSON Parsing
 

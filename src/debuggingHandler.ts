@@ -51,15 +51,13 @@ export class DebuggingHandler implements IDebuggingHandler {
         configurationName?: string;
     }): Promise<string> {
         const { fileFullPath, workingDirectory, testName, configurationName } = args;
-        
-        try {            
-            let selectedConfigName = configurationName ?? await this.configManager.promptForConfiguration(workingDirectory);
-            
+		
+        try {
             // Get debug configuration from launch.json or create default
             const debugConfig = await this.configManager.getDebugConfig(
                 workingDirectory, 
                 fileFullPath, 
-                selectedConfigName,
+                configurationName,
                 testName
             );
 
@@ -73,7 +71,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 }
                 
                 // return also the current state
-                const configInfo = selectedConfigName ? ` using configuration '${selectedConfigName}'` : ' with default configuration';
+                const configInfo = debugConfig.name ? ` using configuration '${debugConfig.name}'` : '';
                 const testInfo = testName ? ` (test: ${testName})` : '';
                 const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
                 return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${currentState.toString()}`;

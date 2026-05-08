@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, Cursor, Codex) to connect to the DebugMCP server. Provides a seamless onboarding experience.
+Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, GitHub Copilot CLI, Cursor, Codex) to connect to the DebugMCP server. Provides a seamless onboarding experience.
 
 ## Motivation
 
@@ -22,6 +22,7 @@ For AI agents to use DebugMCP, they need MCP server configuration in their setti
 |-------|-------------|-----------|
 | Cline | `cline_mcp_settings.json` | `mcpServers` |
 | GitHub Copilot | `mcp.json` | `servers` |
+| GitHub Copilot CLI | `~/.copilot/mcp-config.json` or `${COPILOT_HOME}/mcp-config.json` | `mcpServers` |
 | Cursor | `mcp_settings.json` | `mcpServers` |
 | Codex | `~/.codex/config.toml` or `${CODEX_HOME}/config.toml` | `mcp_servers.debugmcp` |
 
@@ -36,15 +37,28 @@ Config base paths vary by OS:
 
 ### MCP Server Configuration
 
-The configuration written to agent settings:
+The configuration written to most JSON-based agent settings:
 ```json
 {
   "debugmcp": {
     "autoApprove": [],
     "disabled": false,
     "timeout": 180,
-    "type": "sse",
-    "url": "http://localhost:3001/sse"
+    "type": "streamableHttp",
+    "url": "http://localhost:3001/mcp"
+  }
+}
+```
+
+GitHub Copilot CLI uses:
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp",
+      "tools": ["*"]
+    }
   }
 }
 ```
