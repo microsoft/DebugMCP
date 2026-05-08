@@ -111,7 +111,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         
         // Build test-specific configurations based on language
         if (testName) {
-            return await this.createTestDebugConfig(detectedLanguage, fileFullPath, cwd, testName);
+            return await this.createTestDebugConfig(detectedLanguage, workingDirectory, fileFullPath, cwd, testName);
         }
 
         const configs: { [key: string]: vscode.DebugConfiguration } = {
@@ -267,6 +267,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
      */
     private async createTestDebugConfig(
         language: string,
+        workingDirectory: string,
         fileFullPath: string,
         cwd: string,
         testName: string
@@ -361,7 +362,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                         '--filter', `FullyQualifiedName~${testName}`
                     ],
                     console: 'integratedTerminal',
-                    cwd: cwd,
+                    cwd: workingDirectory,
                     stopAtEntry: false,
                     env: {
                         VSTEST_HOST_DEBUG: '1'

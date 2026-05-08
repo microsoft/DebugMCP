@@ -33,7 +33,7 @@ export class TestHostAutoAttacher {
 
                 logger.info(`Found testhost PID=${pid}, attaching...`);
                 logger.info(`Session=${session.id}, Name=${session.name}`);
-                this.pidToSession.set(pid, session.id)
+                this.pidToSession.set(pid, session.id);
                 await this.attachToTestHost(pid, session);
                 logger.info(`Successfully attached to testhost (PID: ${pid})`);
             } catch (err) {
@@ -44,7 +44,7 @@ export class TestHostAutoAttacher {
         this.disposables.push(vscode.debug.onDidTerminateDebugSession(async (session) => {
             for (const [pid, sid] of this.pidToSession) {
                 if (sid === session.id) {
-                    this.pidToSession.delete(pid)
+                    this.pidToSession.delete(pid);
                 }
             }
         }));
@@ -59,7 +59,9 @@ export class TestHostAutoAttacher {
 
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
-            if (!vscode.debug.activeDebugSession) break;
+            if (!vscode.debug.activeDebugSession) {
+                break;
+            }
 
             const processes = await this.psList();
 
