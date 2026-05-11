@@ -28,7 +28,8 @@ export class DebugMCPServer {
     private debuggingHandler: IDebuggingHandler;
     private transports: Map<string, StreamableHTTPServerTransport> = new Map();
     private testHostAutoAttacher: TestHostAutoAttacher;
-    private allowNextTransport = true;
+    private transportQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+    private processingRequest = false;
 
     constructor(port: number, timeoutInSeconds: number) {
         // Initialize the debugging components with dependency injection
@@ -351,29 +352,14 @@ export class DebugMCPServer {
             // Streamable HTTP endpoint — handles MCP protocol messages
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
+                await this.acquireTransportLock();
+
+                const transport = new StreamableHTTPServerTransport({
+                    sessionIdGenerator: undefined, // Stateless mode - no session management
+                });
 
                 try {
-                    let waitCnt = 0;
-                    while (!this.allowNextTransport && waitCnt <= 15) {
-                        waitCnt++;
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                    }
-
-                    if (!this.allowNextTransport) {
-                        throw new Error("Error wait for transport release");
-                    }
-
-                    const transport = new StreamableHTTPServerTransport({
-                        sessionIdGenerator: undefined, // Stateless mode - no session management
-                    });
-                    res.on('close', () => {
-                        transport.close();
-                        this.allowNextTransport = true;
-                        logger.info('MCP transport closed');
-                    });
-
                     await this.mcpServer!.connect(transport);
-                    this.allowNextTransport = false;
                     await transport.handleRequest(req, res, req.body);
                 } catch (error) {
                     logger.error('Error while handling MCP request', error);
@@ -408,6 +394,10 @@ export class DebugMCPServer {
                             });
                         });
                     }
+                } finally {
+                    transport.close();
+                    this.releaseTransportLock();
+                    logger.info('MCP transport closed');
                 }
             });
 
@@ -480,5 +470,24 @@ export class DebugMCPServer {
      */
     isInitialized(): boolean {
         return this.initialized;
+    }
+    
+    private async acquireTransportLock(): Promise<void> {
+        if (!this.processingRequest) {
+            this.processingRequest = true;
+            return;
+        }
+        return new Promise<void>((resolve, reject) => {
+            this.transportQueue.push({ resolve, reject });
+        });
+    }
+
+    private releaseTransportLock(): void {
+        if (this.transportQueue.length > 0) {
+            const next = this.transportQueue.shift()!;
+            next.resolve();
+        } else {
+            this.processingRequest = false;
+        }
     }
 }
