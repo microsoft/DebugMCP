@@ -4,6 +4,11 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`get_loaded_scripts` tool** — returns all scripts currently loaded in the active debug session via the DAP `loadedSources` request. Works on a running session without requiring execution to be paused. Each entry contains `name`, `path` (null for dynamically generated scripts), and `sourceReference` (non-zero when there is no on-disk path). Gracefully returns an error object if there is no active session or if the debug adapter does not support `loadedSources`.
+
 ## [1.0.8] - 2025-03-14
 
 ### Added

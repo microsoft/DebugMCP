@@ -183,6 +183,18 @@ export class DebugMCPServer {
             return { content: [{ type: 'text' as const, text: result }] };
         });
 
+        // Get loaded scripts tool
+        this.mcpServer!.registerTool('get_loaded_scripts', {
+            description: 'Returns all scripts currently loaded in the active debug session. ' +
+                'Does not require the session to be paused — it can be called at any point while a debug session is running. ' +
+                'Each entry includes the script name, its file path on disk (or null for dynamically generated scripts), ' +
+                'and a sourceReference (non-zero for scripts with no on-disk path). ' +
+                'Use this to discover exact file paths before calling add_breakpoint, ' +
+                'which avoids unbound breakpoints caused by guessed or incorrect paths.',
+        }, async () => {
+            const result = await this.debuggingHandler.handleGetLoadedScripts();
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
         // Get variables tool
         this.mcpServer!.registerTool('get_variables_values', {
             description: 'Inspect all variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does.',

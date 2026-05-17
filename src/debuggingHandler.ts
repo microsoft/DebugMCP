@@ -23,6 +23,7 @@ export interface IDebuggingHandler {
     handleListBreakpoints(): Promise<string>;
     handleGetVariables(args: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
+    handleGetLoadedScripts(): Promise<string>;
 }
 
 /**
@@ -377,6 +378,39 @@ export class DebuggingHandler implements IDebuggingHandler {
             return variablesInfo;
         } catch (error) {
             throw new Error(`Error getting variables: ${error}`);
+        }
+    }
+
+    /**
+     * Return all scripts currently loaded in the active debug session via the DAP loadedSources request
+     */
+    public async handleGetLoadedScripts(): Promise<string> {
+        try {
+            const session = vscode.debug.activeDebugSession;
+
+            if (!session) {
+                return JSON.stringify({ error: 'No active debug session. Start a debug session first.' });
+            }
+
+            let response: { sources: Array<{ name: string; path?: string; sourceReference?: number }> };
+            try {
+                response = await session.customRequest('loadedSources', {});
+            } catch (err) {
+                return JSON.stringify({
+                    error: 'The active debug adapter does not support loadedSources.',
+                    hint: 'This capability is supported by Node.js, Electron, and Chrome-based debug adapters.',
+                });
+            }
+
+            const sources = (response.sources ?? []).map(s => ({
+                name: s.name,
+                path: s.path ?? null,
+                sourceReference: s.sourceReference ?? 0,
+            }));
+
+            return JSON.stringify(sources, null, 2);
+        } catch (error) {
+            throw new Error(`Error getting loaded scripts: ${error}`);
         }
     }
 

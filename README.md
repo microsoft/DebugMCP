@@ -57,6 +57,7 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
 | **clear_all_breakpoints** | Remove all breakpoints at once | None |
 | **list_breakpoints** | List all active breakpoints | None |
+| **get_loaded_scripts** | Returns all scripts currently loaded in the active debug session (name, path, sourceReference). Works on a running session without pausing execution. Useful for discovering exact file paths before calling `add_breakpoint`. | None |
 | **get_variables_values** | Get variables and their values at current execution point | `scope` (optional: 'local', 'global', 'all') |
 | **evaluate_expression** | Evaluate an expression in debug context | `expression` (required) |
 
