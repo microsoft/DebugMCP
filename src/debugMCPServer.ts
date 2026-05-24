@@ -131,7 +131,7 @@ export class DebugMCPServer {
 
         // Start debugging tool
         this.mcpServer!.registerTool('start_debugging', {
-            description: 'IIMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
+            description: 'IMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
                 '\n\nUSE THIS WHEN:' +
                 '\n• Any bug, error, or unexpected behavior occurs' +
                 '\n• Asked to debug a unit test' +
