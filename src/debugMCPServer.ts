@@ -11,6 +11,7 @@ import {
     DebuggingHandler,
     IDebuggingHandler
 } from '.';
+import { TestHostAutoAttacher } from './testHostAutoAttacher';
 import { logger } from './utils/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -25,12 +26,17 @@ export class DebugMCPServer {
     private port: number;
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
+    private transports: Map<string, StreamableHTTPServerTransport> = new Map();
+    private testHostAutoAttacher: TestHostAutoAttacher;
+    private transportQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+    private processingRequest = false;
 
     constructor(port: number, timeoutInSeconds: number) {
         // Initialize the debugging components with dependency injection
         const executor = new DebuggingExecutor();
         const configManager = new ConfigurationManager();
         this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
+        this.testHostAutoAttacher = new TestHostAutoAttacher();
         this.port = port;
     }
 
@@ -346,13 +352,10 @@ export class DebugMCPServer {
             // Streamable HTTP endpoint — handles MCP protocol messages
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
+                await this.acquireTransportLock();
 
                 const transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: undefined, // Stateless mode - no session management
-                });
-                res.on('close', () => {
-                    transport.close();
-                    logger.info('MCP transport closed');
                 });
 
                 try {
@@ -391,6 +394,10 @@ export class DebugMCPServer {
                             });
                         });
                     }
+                } finally {
+                    transport.close();
+                    this.releaseTransportLock();
+                    logger.info('MCP transport closed');
                 }
             });
 
@@ -424,6 +431,15 @@ export class DebugMCPServer {
      * Stop the MCP server
      */
     async stop() {
+        // Note: With stateless StreamableHTTPServerTransport, transports are closed per-request
+        // No need to track and close them manually
+        this.transports.clear();
+
+        // Dispose the testhost auto attacher
+        if (this.testHostAutoAttacher) {
+            this.testHostAutoAttacher.dispose();
+        }
+
         // Close the HTTP server
         if (this.httpServer) {
             await new Promise<void>((resolve) => {
@@ -454,5 +470,24 @@ export class DebugMCPServer {
      */
     isInitialized(): boolean {
         return this.initialized;
+    }
+    
+    private async acquireTransportLock(): Promise<void> {
+        if (!this.processingRequest) {
+            this.processingRequest = true;
+            return;
+        }
+        return new Promise<void>((resolve, reject) => {
+            this.transportQueue.push({ resolve, reject });
+        });
+    }
+
+    private releaseTransportLock(): void {
+        if (this.transportQueue.length > 0) {
+            const next = this.transportQueue.shift()!;
+            next.resolve();
+        } else {
+            this.processingRequest = false;
+        }
     }
 }
