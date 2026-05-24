@@ -120,9 +120,9 @@ Before stopping your debug session, ensure you can answer:
 ✅ **BEST PRACTICE:** Always set an initial breakpoint before starting debugging
 ❌ **COMMON MISTAKE:** Set breakpoint in a method signature/definition line like 'def func()'
 ✅ **BEST PRACTICE:** Set breakpoint in the method body
-❌ **COMMON MISTAKE:** Set breakpoint on commented line e.g '//', '#' and ect.
+❌ **COMMON MISTAKE:** Set breakpoint on a commented line, e.g. '//', '#', etc.
 ✅ **BEST PRACTICE:** Set breakpoint only on executable lines.
-❌ **COMMON MISTAKE:** Step over the problematic line without fully understanding why the issue occured.
+❌ **COMMON MISTAKE:** Step over the problematic line without fully understanding why the issue occurred.
 ✅ **BEST PRACTICE:** Stop the session, set breakpoint in the problematic line and restart the session.
 
 ## 🧹 CLEANUP AFTER ROOT CAUSE VERIFICATION
