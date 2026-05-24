@@ -17,9 +17,18 @@ export async function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);
     const serverPort = config.get<number>('serverPort', 3001);
+    const bindHost = config.get<string>('bindHost', '127.0.0.1');
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
+    logger.info(`Using bindHost: ${bindHost}`);
+    if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+        logger.warn(
+            `DebugMCP is bound to '${bindHost}' instead of loopback. ` +
+            `This exposes the unauthenticated debugger to other hosts on the network. ` +
+            `Set 'debugmcp.bindHost' back to '127.0.0.1' unless you fully trust the network.`
+        );
+    }
 
     // Initialize Agent Configuration Manager
     agentConfigManager = new AgentConfigurationManager(context, timeoutInSeconds, serverPort);
@@ -35,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
         logger.info('Starting MCP server initialization...');
         
-        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds);
+        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds, bindHost);
         await mcpServer.initialize();
         await mcpServer.start();
         

@@ -76,6 +76,11 @@
           "type": "number",
           "default": 3001,
           "description": "Port number for the DebugMCP server"
+        },
+        "debugmcp.bindHost": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "markdownDescription": "Network interface the DebugMCP HTTP server binds to. **Defaults to `127.0.0.1` (loopback only).** ⚠️ **Security warning:** changing this to `0.0.0.0` or a LAN address exposes the unauthenticated MCP debugger — including arbitrary code execution via `evaluate_expression` and `start_debugging` — to every host on the network. Only change this if you fully understand the risk."
         }
       }
     }

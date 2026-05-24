@@ -19,19 +19,82 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
  * Main MCP server class that exposes debugging functionality as tools and resources.
  * Uses the official @modelcontextprotocol/sdk with SSE transport over express.
  */
+/**
+ * Allow-list of host names that are considered loopback.
+ * Used to validate the Host and Origin headers on incoming requests
+ * to defend against DNS-rebinding-style attacks even when the
+ * server is bound to a non-loopback interface.
+ */
+const LOOPBACK_HOSTNAMES = new Set<string>([
+    'localhost',
+    '127.0.0.1',
+    '[::1]',
+    '::1'
+]);
+
+/**
+ * Extract just the hostname portion from a Host header value,
+ * stripping any port and surrounding brackets for IPv6 literals.
+ */
+function extractHostname(hostHeader: string): string {
+    const trimmed = hostHeader.trim().toLowerCase();
+    // IPv6 literal in brackets, optionally with :port suffix
+    if (trimmed.startsWith('[')) {
+        const closingBracketIndex = trimmed.indexOf(']');
+        if (closingBracketIndex === -1) {
+            return trimmed; // malformed — let caller reject
+        }
+        return trimmed.substring(0, closingBracketIndex + 1);
+    }
+    // IPv4 or DNS name with optional :port
+    const colonIndex = trimmed.indexOf(':');
+    return colonIndex === -1 ? trimmed : trimmed.substring(0, colonIndex);
+}
+
+/**
+ * Returns true when the given Host header value names a loopback address.
+ */
+export function isLoopbackHost(hostHeader: string | undefined): boolean {
+    if (!hostHeader) {
+        return false;
+    }
+    const hostname = extractHostname(hostHeader);
+    return LOOPBACK_HOSTNAMES.has(hostname);
+}
+
+/**
+ * Returns true when the given Origin header value names a loopback address.
+ * A missing Origin is allowed (most non-browser HTTP clients omit it).
+ */
+export function isLoopbackOrigin(originHeader: string | undefined): boolean {
+    if (!originHeader) {
+        return true;
+    }
+    try {
+        const url = new URL(originHeader);
+        // Strip brackets from IPv6 literal for set lookup
+        const hostname = url.hostname.toLowerCase();
+        return LOOPBACK_HOSTNAMES.has(hostname) || LOOPBACK_HOSTNAMES.has(`[${hostname}]`);
+    } catch {
+        return false;
+    }
+}
+
 export class DebugMCPServer {
     private mcpServer: McpServer | null = null;
     private httpServer: http.Server | null = null;
     private port: number;
+    private host: string;
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
 
-    constructor(port: number, timeoutInSeconds: number) {
+    constructor(port: number, timeoutInSeconds: number, host: string = '127.0.0.1') {
         // Initialize the debugging components with dependency injection
         const executor = new DebuggingExecutor();
         const configManager = new ConfigurationManager();
         this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
         this.port = port;
+        this.host = host;
     }
 
     /**
@@ -68,7 +131,7 @@ export class DebugMCPServer {
 
         // Start debugging tool
         this.mcpServer!.registerTool('start_debugging', {
-            description: 'IMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
+            description: 'IIMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
                 '\n\nUSE THIS WHEN:' +
                 '\n• Any bug, error, or unexpected behavior occurs' +
                 '\n• Asked to debug a unit test' +
@@ -318,12 +381,44 @@ export class DebugMCPServer {
         }
 
         try {
-            logger.info(`Starting DebugMCP server on port ${this.port}...`);
+            logger.info(`Starting DebugMCP server on ${this.host}:${this.port}...`);
 
             // Dynamically import express (ES module)
             const expressModule = await import('express');
             const express = expressModule.default;
             const app = express();
+
+            // Reject requests whose Host or Origin header is not loopback.
+            // Defends against DNS-rebinding attacks: a malicious page that resolves
+            // its domain to 127.0.0.1 will still send Host/Origin = attacker.example,
+            // which we reject before any MCP handler runs.
+            app.use((req: any, res: any, next: any) => {
+                if (!isLoopbackHost(req.headers['host'])) {
+                    logger.warn(`Rejecting request with non-loopback Host header: ${req.headers['host']}`);
+                    res.status(403).json({
+                        jsonrpc: '2.0',
+                        error: {
+                            code: -32000,
+                            message: 'Forbidden: Host header is not a loopback address'
+                        },
+                        id: null
+                    });
+                    return;
+                }
+                if (!isLoopbackOrigin(req.headers['origin'])) {
+                    logger.warn(`Rejecting request with non-loopback Origin header: ${req.headers['origin']}`);
+                    res.status(403).json({
+                        jsonrpc: '2.0',
+                        error: {
+                            code: -32000,
+                            message: 'Forbidden: Origin header is not a loopback address'
+                        },
+                        id: null
+                    });
+                    return;
+                }
+                next();
+            });
 
             // Parse JSON body for incoming requests
             app.use(express.json());
@@ -404,15 +499,15 @@ export class DebugMCPServer {
                 });
             });
 
-            // Start HTTP server
+            // Start HTTP server, bound to the configured host (loopback by default)
             await new Promise<void>((resolve, reject) => {
-                this.httpServer = app.listen(this.port, () => {
+                this.httpServer = app.listen(this.port, this.host, () => {
                     resolve();
                 });
                 this.httpServer.on('error', reject);
             });
 
-            logger.info(`DebugMCP server started successfully on port ${this.port}`);
+            logger.info(`DebugMCP server started successfully on ${this.host}:${this.port}`);
 
         } catch (error) {
             logger.error(`Failed to start DebugMCP server`, error);
