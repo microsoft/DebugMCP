@@ -21,6 +21,7 @@ export interface IDebuggingHandler {
     handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
     handleClearAllBreakpoints(): Promise<string>;
     handleListBreakpoints(): Promise<string>;
+    handleGetUnboundBreakpoints(): Promise<string>;
     handleGetVariables(args: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
 }
@@ -260,12 +261,44 @@ export class DebuggingHandler implements IDebuggingHandler {
             for (const lineNumber of matchingLineNumbers) {
                 await this.executor.addBreakpoint(uri, lineNumber);
             }
-            
-            if (matchingLineNumbers.length === 1) {
-                return `Breakpoint added at ${fileFullPath}:${matchingLineNumbers[0]}`;
+
+            // Wait briefly for VS Code to verify the breakpoints against the active debug session
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const session = vscode.debug.activeDebugSession;
+            const allBreakpoints = this.executor.getBreakpoints();
+
+            const results = await Promise.all(matchingLineNumbers.map(async (lineNumber) => {
+                const bp = allBreakpoints.find(b => {
+                    if (b instanceof vscode.SourceBreakpoint) {
+                        return b.location.uri.toString() === uri.toString() &&
+                               b.location.range.start.line === lineNumber - 1;
+                    }
+                    return false;
+                }) as vscode.SourceBreakpoint | undefined;
+
+                let verified = false;
+                if (bp && session) {
+                    const dapBp = await session.getDebugProtocolBreakpoint(bp);
+                    verified = (dapBp as any)?.verified === true;
+                }
+
+                return {
+                    file: fileFullPath,
+                    line: lineNumber,
+                    verified,
+                    ...(verified ? {} : {
+                        hint: session
+                            ? 'Breakpoint was set but not verified. The line may not be executable — check that lineContent matches an actual code statement.'
+                            : 'Breakpoint was set but not yet verified. No debug session is active — verification occurs after start_debugging is called.'
+                    })
+                };
+            }));
+
+            if (results.length === 1) {
+                return JSON.stringify(results[0], null, 2);
             } else {
-                const linesList = matchingLineNumbers.join(', ');
-                return `Breakpoints added at ${matchingLineNumbers.length} locations in ${fileFullPath}: lines ${linesList}`;
+                return JSON.stringify({ breakpoints: results }, null, 2);
             }
         } catch (error) {
             throw new Error(`Error adding breakpoint: ${error}`);
@@ -327,6 +360,73 @@ export class DebuggingHandler implements IDebuggingHandler {
             return breakpointList;
         } catch (error) {
             throw new Error(`Error listing breakpoints: ${error}`);
+        }
+    }
+
+    /**
+     * Return all breakpoints that are not yet verified (unbound)
+     */
+    public async handleGetUnboundBreakpoints(): Promise<string> {
+        try {
+            const breakpoints = this.executor.getBreakpoints();
+            const sourceBreakpoints = breakpoints.filter(
+                (bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint
+            );
+
+            if (sourceBreakpoints.length === 0) {
+                return 'No breakpoints are currently set.';
+            }
+
+            const session = vscode.debug.activeDebugSession;
+
+            if (!session) {
+                return 'No active debug session. Breakpoints can only be verified while a debug session is running — call start_debugging first.';
+            }
+
+            // With an active session, query the DAP protocol breakpoint for each source breakpoint.
+            // The DAP Breakpoint object carries: verified, message (reason), source (resolved location), line, column.
+            const diagnostics: string[] = [];
+            for (const bp of sourceBreakpoints) {
+                const dapBp = await session.getDebugProtocolBreakpoint(bp) as any;
+                const verified: boolean = dapBp?.verified === true;
+                if (!verified) {
+                    const requestedFile = bp.location.uri.fsPath;
+                    const requestedLine = bp.location.range.start.line + 1;
+                    const idx = diagnostics.length + 1;
+
+                    let entry = `${idx}. Requested: ${requestedFile}:${requestedLine}`;
+
+                    // DAP message is the debugger's own explanation (same source as Debug Doctor)
+                    const message: string | undefined = dapBp?.message;
+                    if (message) {
+                        entry += `\n   Reason: ${message}`;
+                    } else {
+                        entry += `\n   Reason: Could not be verified at this location`;
+                    }
+
+                    // If the debugger resolved the breakpoint to a different source file,
+                    // report that location — this surfaces sourcemap/path-mismatch issues
+                    // the same way Debug Doctor does.
+                    const resolvedPath: string | undefined = dapBp?.source?.path;
+                    const resolvedLine: number | undefined = dapBp?.line;
+                    if (resolvedPath && resolvedPath !== requestedFile) {
+                        entry += `\n   Resolved to: ${resolvedPath}${resolvedLine !== undefined ? `:${resolvedLine}` : ''}`;
+                        entry += `\n   Hint: The debugger found a different source file. This is often a sourcemap or build-output path mismatch.`;
+                    } else if (!resolvedPath) {
+                        entry += `\n   Hint: The debugger could not find a corresponding source location. Check that lineContent matches an actual executable statement and that any required build step has run.`;
+                    }
+
+                    diagnostics.push(entry);
+                }
+            }
+
+            if (diagnostics.length === 0) {
+                return 'All breakpoints are verified (bound to executable lines).';
+            }
+
+            return `Unbound (unverified) breakpoints — ${diagnostics.length} of ${sourceBreakpoints.length} could not be resolved:\n\n${diagnostics.join('\n\n')}`;
+        } catch (error) {
+            throw new Error(`Error getting unbound breakpoints: ${error}`);
         }
     }
 

@@ -4,6 +4,12 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`get_unbound_breakpoints` tool** — returns all breakpoints that the debugger could not bind to an executable line (`verified === false` in the DAP protocol). Useful for diagnosing silent `add_breakpoint` failures. Reports the debugger’s own reason string when available. Without an active debug session all pending breakpoints are listed with a reminder to call `start_debugging` first.
+- **`add_breakpoint` now reports verification status** — after setting a breakpoint the tool waits briefly and queries the active debug session via `getDebugProtocolBreakpoint`. The response is now a JSON object with `file`, `line`, `verified`, and an optional `hint` explaining why the breakpoint could not be bound. Addresses the silent-failure issue described in [#18](https://github.com/microsoft/DebugMCP/issues/18).
+
 ## [1.0.8] - 2025-03-14
 
 ### Added

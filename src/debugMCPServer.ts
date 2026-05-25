@@ -183,6 +183,16 @@ export class DebugMCPServer {
             return { content: [{ type: 'text' as const, text: result }] };
         });
 
+        // Get unbound breakpoints tool
+        this.mcpServer!.registerTool('get_unbound_breakpoints', {
+            description: 'Returns all breakpoints that are currently unverified (unbound) — i.e., set but not resolved to an executable line by the debugger. ' +
+                'Most useful after start_debugging has been called. ' +
+                'Use this to diagnose why a breakpoint is not being hit, or to confirm that add_breakpoint succeeded.',
+        }, async () => {
+            const result = await this.debuggingHandler.handleGetUnboundBreakpoints();
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
         // Get variables tool
         this.mcpServer!.registerTool('get_variables_values', {
             description: 'Inspect all variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does.',
@@ -204,6 +214,7 @@ export class DebugMCPServer {
             const result = await this.debuggingHandler.handleEvaluateExpression(args);
             return { content: [{ type: 'text' as const, text: result }] };
         });
+
     }
 
     /**
