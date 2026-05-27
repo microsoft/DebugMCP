@@ -343,6 +343,20 @@ export class DebugMCPServer {
                 next(error);
             });
 
+            // Stateless server: no SSE on GET - MCP spec requires explicit 405 (not 404).
+            const methodNotAllowedHandler = (_req: any, res: any) => {
+                res.status(405).json({
+                    jsonrpc: '2.0',
+                    error: {
+                        code: -32000,
+                        message: 'Method not allowed. Use POST /mcp.'
+                    },
+                    id: null
+                });
+            };
+            app.get('/mcp', methodNotAllowedHandler);
+            app.delete('/mcp', methodNotAllowedHandler);
+
             // Streamable HTTP endpoint — handles MCP protocol messages
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
@@ -367,28 +381,6 @@ export class DebugMCPServer {
                                 code: -32603,
                                 message: 'Internal MCP server error'
                             }
-                        });
-
-                        app.get('/mcp', async (_req: any, res: any) => {
-                            res.status(405).json({
-                                jsonrpc: '2.0',
-                                error: {
-                                    code: -32000,
-                                    message: 'Method not allowed. Use POST /mcp.'
-                                },
-                                id: null
-                            });
-                        });
-
-                        app.delete('/mcp', async (_req: any, res: any) => {
-                            res.status(405).json({
-                                jsonrpc: '2.0',
-                                error: {
-                                    code: -32000,
-                                    message: 'Method not allowed. Use POST /mcp.'
-                                },
-                                id: null
-                            });
                         });
                     }
                 }
