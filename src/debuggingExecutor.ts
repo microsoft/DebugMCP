@@ -2,12 +2,29 @@
 
 import * as vscode from 'vscode';
 import { DebugState, StackFrame } from './debugState';
+import { logger } from './utils/logger';
+
+/**
+ * Outcome of dispatching `testing.debugAtCursor`.
+ *
+ * `started` indicates the command was dispatched successfully.
+ * `runComplete` resolves when the underlying test run *finishes* (pass, fail,
+ * or aborted). For .NET this includes the `dotnet test` parent/testhost
+ * teardown. The handler races this against waitForDebugSessionReady so a test
+ * that runs to completion without hitting a breakpoint is reported as
+ * 'terminated' immediately instead of waiting for the configured timeout.
+ */
+export interface TestDebugDispatch {
+    started: boolean;
+    runComplete: Promise<void>;
+}
 
 /**
  * Interface for debugging execution operations
  */
 export interface IDebuggingExecutor {
-    startDebugging(workingDirectory: string, config: vscode.DebugConfiguration): Promise<boolean>;
+    startDebugging(workingDirectory: string, config: string | vscode.DebugConfiguration): Promise<boolean>;
+    debugTestAtCursor(fileFullPath: string, testName: string): Promise<TestDebugDispatch>;
     stopDebugging(session?: vscode.DebugSession): Promise<void>;
     stepOver(): Promise<void>;
     stepInto(): Promise<void>;
@@ -23,6 +40,7 @@ export interface IDebuggingExecutor {
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
+    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>;
 }
 
 /**
@@ -35,7 +53,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public async startDebugging(
         workingDirectory: string, 
-        config: vscode.DebugConfiguration
+        config: string | vscode.DebugConfiguration
     ): Promise<boolean> {
         try {
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
@@ -43,6 +61,159 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         } catch (error) {
             throw new Error(`Failed to start debugging: ${error}`);
         }
+    }
+
+    /**
+     * Debug a single test by routing through VS Code's Testing API.
+     *
+     * Works for any language whose extension registers a TestController
+     * (Python, Jest/Mocha, JUnit, C# Dev Kit, Go, Rust, ...). This is the
+     * only correct way to debug `dotnet test` and similar runners where
+     * the actual test code runs in a child process — the language's test
+     * integration handles the parent/child debugger attach.
+     *
+     * Implementation strategy:
+     *  1. Open the file in an editor.
+     *  2. Place the cursor on the test method's definition line.
+     *  3. Execute the built-in `testing.debugAtCursor` command.
+     *
+     * The handler's existing readiness wait picks up the resulting session.
+     */
+    public async debugTestAtCursor(fileFullPath: string, testName: string): Promise<TestDebugDispatch> {
+        const positioned = await this.positionCursorAtTest(fileFullPath, testName);
+        if (!positioned) {
+            throw new Error(
+                `Could not locate test '${testName}' in ${fileFullPath}. ` +
+                `Check the test name, or pass a launch.json configurationName instead.`
+            );
+        }
+
+        // Trigger test discovery before dispatching. Some controllers (notably
+        // Python's) lazily discover tests on first Test Explorer open; without
+        // this, testing.debugAtCursor silently no-ops because no TestItem exists
+        // at the cursor yet. refreshTests typically resolves once discovery is
+        // complete, but we add a small grace period for controllers that report
+        // completion before all TestItems are registered.
+        try {
+            await vscode.commands.executeCommand('testing.refreshTests');
+            await new Promise(resolve => setTimeout(resolve, 300));
+        } catch {
+            // Not fatal — debugAtCursor may still work if tests were already discovered.
+        }
+
+        // `testing.debugAtCursor` resolves only when the entire test run
+        // *completes*, not when the debug session starts. We must not await
+        // it here — if the test hits a breakpoint, awaiting would block the
+        // handler forever. Instead, return the completion promise so the
+        // handler can race it against waitForDebugSessionReady: a clean run
+        // that never pauses will be reported as 'terminated' immediately.
+        const runComplete = Promise.resolve(vscode.commands.executeCommand('testing.debugAtCursor'))
+            .then(() => undefined)
+            .catch(err => {
+                logger.error(`testing.debugAtCursor failed: ${err}`);
+            });
+        return { started: true, runComplete };
+    }
+
+    /**
+     * Open the file and move the active editor's cursor to the line that
+     * defines `testName`. Tries language-aware patterns first, then falls
+     * back to a literal substring search (covers JS/TS `it('name')` style
+     * where the test name is a string literal, not an identifier).
+     *
+     * The cursor is placed on the test name itself (not on the preceding
+     * `void`/`def`/etc. keyword) because some TestController implementations
+     * — notably C# Dev Kit — register tight TestItem ranges around the
+     * method name. A cursor outside that range causes testing.debugAtCursor
+     * to fall back to the first test in the file.
+     *
+     * The cursor position is passed via the `selection` option to
+     * showTextDocument so it's applied atomically with the open — separate
+     * `editor.selection = ...` writes race testing.debugAtCursor.
+     */
+    private async positionCursorAtTest(fileFullPath: string, testName: string): Promise<boolean> {
+        const uri = vscode.Uri.file(fileFullPath);
+        const doc = await vscode.workspace.openTextDocument(uri);
+
+        const escaped = testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const patterns = [
+            // identifier-style definitions: def/void/func/fn/fun/etc NAME(
+            new RegExp(`\\b(?:def|void|func|fn|fun|sub|Task|async|public|private|protected|internal|static)\\b[^\\n]*?\\b(${escaped})\\s*\\(`),
+            // bare identifier followed by (
+            new RegExp(`\\b(${escaped})\\s*\\(`),
+            // last resort: any substring match (covers it('add two numbers', ...))
+            new RegExp(`(${escaped})`)
+        ];
+
+        let target: vscode.Position | undefined;
+        for (const pattern of patterns) {
+            for (let i = 0; i < doc.lineCount; i++) {
+                const line = doc.lineAt(i).text;
+                const match = pattern.exec(line);
+                if (match) {
+                    // Place cursor one line below the method signature, inside
+                    // the body. The method-name line itself can be outside the
+                    // TestItem range used by some test controllers (notably
+                    // C# Dev Kit), causing testing.debugAtCursor to fall back
+                    // to the first test in the file. Landing inside the body
+                    // is reliably within the TestItem range across languages.
+                    const bodyLine = Math.min(i + 1, doc.lineCount - 1);
+                    const bodyText = doc.lineAt(bodyLine).text;
+                    const indent = bodyText.match(/^\s*/)?.[0].length ?? 0;
+                    target = new vscode.Position(bodyLine, indent);
+                    break;
+                }
+            }
+            if (target) {
+                break;
+            }
+        }
+
+        if (!target) {
+            return false;
+        }
+
+        const selection = new vscode.Range(target, target);
+        const editor = await vscode.window.showTextDocument(doc, {
+            selection,
+            preserveFocus: false,
+            preview: false
+        });
+
+        // Belt-and-suspenders: showTextDocument's `selection` option sets the
+        // selection but doesn't always scroll the viewport, especially when the
+        // editor was already open. Explicitly reveal to guarantee the cursor
+        // line is visible (and, more importantly, is the active line).
+        editor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
+
+        // Wait until VS Code considers this editor active. testing.debugAtCursor
+        // reads the active editor synchronously, so without this small wait the
+        // command can race and pick whichever editor was previously focused.
+        await this.waitForActiveEditor(uri);
+        return true;
+    }
+
+    private async waitForActiveEditor(uri: vscode.Uri, timeoutMs = 1500): Promise<void> {
+        const matches = (editor: vscode.TextEditor | undefined) =>
+            editor?.document.uri.toString() === uri.toString();
+
+        if (matches(vscode.window.activeTextEditor)) {
+            return;
+        }
+
+        await new Promise<void>(resolve => {
+            const timer = setTimeout(() => {
+                disposable.dispose();
+                resolve();
+            }, timeoutMs);
+            const disposable = vscode.window.onDidChangeActiveTextEditor(editor => {
+                if (matches(editor)) {
+                    clearTimeout(timer);
+                    disposable.dispose();
+                    resolve();
+                }
+            });
+        });
     }
 
     /**
@@ -220,7 +391,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     private async extractFrameName(session: vscode.DebugSession, frameId: number, state: DebugState): Promise<void> {
         try {
-            // Get full stack trace (up to 50 frames)
             const stackTraceResponse = await session.customRequest('stackTrace', {
                 threadId: state.threadId,
                 startFrame: 0,
@@ -345,5 +515,98 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public getActiveSession(): vscode.DebugSession | undefined {
         return vscode.debug.activeDebugSession;
+    }
+
+    /**
+     * Wait for the debug session to reach a steady, caller-actionable state.
+     *
+     * Returns when one of the following happens:
+     *  - 'stopped':    A stack frame is available (paused at breakpoint / entry / exception).
+     *                  Subsequent calls (step, get_variables, evaluate) can act immediately.
+     *  - 'terminated': The session ended (program ran to completion without stopping).
+     *  - 'no-session': No debug session ever started within the wait window.
+     *  - 'timeout':    A session is running but never stopped or terminated in time.
+     *
+     * Implemented with VS Code events rather than polling so we react the moment
+     * the state actually changes — important because a fast-running program can
+     * start *and* terminate inside a polling interval.
+     */
+    public async waitForDebugSessionReady(
+        timeoutMs: number
+    ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'> {
+        // Helper: a session is only truly "stopped and actionable" when we have
+        // a DebugStackFrame (frameId present). A bare DebugThread means a thread
+        // is selected but the adapter hasn't published a frame yet — calling
+        // stackTrace/variables at that point can stall or return empty.
+        const isStoppedWithFrame = () => {
+            const item = vscode.debug.activeStackItem;
+            return !!item && 'frameId' in item;
+        };
+
+        if (isStoppedWithFrame()) {
+            return 'stopped';
+        }
+
+        const subscriptions: vscode.Disposable[] = [];
+        let trackedSession: vscode.DebugSession | undefined = vscode.debug.activeDebugSession;
+
+        try {
+            return await new Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>(resolve => {
+                let settled = false;
+                const settle = (result: 'stopped' | 'terminated' | 'timeout' | 'no-session') => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timer);
+                    logger.info(`Debug session ready: ${result}`);
+                    resolve(result);
+                };
+
+                const timer = setTimeout(() => {
+                    settle(trackedSession ? 'timeout' : 'no-session');
+                }, timeoutMs);
+
+                subscriptions.push(
+                    vscode.debug.onDidStartDebugSession(session => {
+                        logger.info(`onDidStartDebugSession: ${session.name}`);
+                        trackedSession = session;
+                        setTimeout(() => {
+                            if (isStoppedWithFrame()) {
+                                settle('stopped');
+                            }
+                        }, 100);
+                    })
+                );
+
+                subscriptions.push(
+                    vscode.debug.onDidChangeActiveStackItem(stackItem => {
+                        const kind = !stackItem
+                            ? 'cleared'
+                            : 'frameId' in stackItem ? 'frame' : 'thread';
+                        logger.info(`onDidChangeActiveStackItem: ${kind}`);
+                        // Only resolve when we have a stack frame. A bare
+                        // DebugThread can fire while the program is still
+                        // running, before the adapter publishes frame info.
+                        if (stackItem && 'frameId' in stackItem) {
+                            settle('stopped');
+                        }
+                    })
+                );
+
+                subscriptions.push(
+                    vscode.debug.onDidTerminateDebugSession(session => {
+                        logger.info(`onDidTerminateDebugSession: ${session.name}, activeSession=${vscode.debug.activeDebugSession?.name ?? 'none'}`);
+                        // Only treat as 'terminated' if no other session is active.
+                        // dotnet test spawns a parent + testhost; wait for both to end.
+                        if (!vscode.debug.activeDebugSession) {
+                            settle('terminated');
+                        }
+                    })
+                );
+            });
+        } finally {
+            subscriptions.forEach(d => d.dispose());
+        }
     }
 }

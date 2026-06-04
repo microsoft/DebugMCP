@@ -15,6 +15,7 @@
   },
   "keywords": [
     "debug",
+    "debugmcp",
     "mcp",
     "debugging",
     "ai",
@@ -69,7 +70,7 @@
       "properties": {
         "debugmcp.timeoutInSeconds": {
           "type": "number",
-          "default": 180,
+          "default": 300,
           "description": "Timeout in seconds"
         },
         "debugmcp.serverPort": {
@@ -97,7 +98,6 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/express": "^5.0.3",
     "express": "^5.2.1",
-    "jsonc-parser": "^3.3.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
