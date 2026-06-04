@@ -189,6 +189,51 @@ export class AgentConfigurationManager {
     }
 
     /**
+     * Get the personal skills directory for a given agent. By convention we
+     * place skills alongside the agent's MCP config file (i.e. in a `skills/`
+     * sibling of the config file's parent directory). This matches harnesses
+     * like Copilot CLI (`~/.copilot/skills/`) and gives a sensible default
+     * for the other supported agents.
+     */
+    private getSkillsDirForAgent(agent: AgentInfo): string {
+        return path.join(path.dirname(agent.configPath), 'skills');
+    }
+
+    /**
+     * Path to the debugmcp skill bundled with the extension.
+     */
+    private getBundledSkillPath(): string {
+        return path.join(this.context.extensionPath, 'skills', 'debug');
+    }
+
+    /**
+     * Copy the bundled debugmcp skill into the agent's personal skills
+     * directory. This is best-effort: if the bundled skill is missing or the
+     * copy fails, we log a warning but do not fail the MCP configuration.
+     */
+    private async registerDebugMCPSkill(agent: AgentInfo): Promise<string | null> {
+        const bundledSkillPath = this.getBundledSkillPath();
+
+        if (!fs.existsSync(bundledSkillPath)) {
+            console.warn(`Bundled debugmcp skill not found at ${bundledSkillPath}; skipping skill registration for ${agent.name}`);
+            return null;
+        }
+
+        const skillsDir = this.getSkillsDirForAgent(agent);
+        const destination = path.join(skillsDir, 'debug');
+
+        try {
+            await fs.promises.mkdir(skillsDir, { recursive: true });
+            await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
+            console.log(`Successfully registered debugmcp skill for ${agent.name} at ${destination}`);
+            return destination;
+        } catch (error) {
+            console.warn(`Failed to register debugmcp skill for ${agent.name} at ${destination}:`, error);
+            return null;
+        }
+    }
+
+    /**
      * Get list of supported agents
      */
     private async getSupportedAgents(): Promise<AgentInfo[]> {
@@ -203,6 +248,14 @@ export class AgentConfigurationManager {
                 name: 'cline',
                 displayName: 'Cline',
                 configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'settings', 'cline_mcp_settings.json'),
+                configFormat: 'json',
+                mcpServerFieldName: 'mcpServers'
+            },
+            {
+                id: 'roo',
+                name: 'roo',
+                displayName: 'Roo Code',
+                configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline', 'settings', 'mcp_settings.json'),
                 configFormat: 'json',
                 mcpServerFieldName: 'mcpServers'
             },
@@ -303,6 +356,12 @@ export class AgentConfigurationManager {
                         console.log(`Successfully migrated ${agent.displayName} configuration`);
                     }
 
+                    // Back-compat: existing Codex users had only the MCP server registered.
+                    // If DebugMCP is configured, also ensure the bundled skill is installed.
+                    if (this.hasCodexDebugMCPSection(configContent)) {
+                        await this.ensureSkillRegistered(agent);
+                    }
+
                     continue;
                 }
 
@@ -349,6 +408,10 @@ export class AgentConfigurationManager {
                     migrationCount++;
                     console.log(`Successfully migrated ${agent.displayName} configuration`);
                 }
+
+                // Back-compat: existing users had only the MCP server registered.
+                // If DebugMCP is configured, also ensure the bundled skill is installed.
+                await this.ensureSkillRegistered(agent);
             } catch (error) {
                 console.error(`Error migrating config for ${agent.name}:`, error);
                 // Continue with other agents even if one fails
@@ -360,6 +423,25 @@ export class AgentConfigurationManager {
                 `DebugMCP: Migrated ${migrationCount} agent configuration(s) to use the new transport protocol.`
             );
         }
+    }
+
+    /**
+     * Ensure the bundled debugmcp skill is installed in the agent's personal
+     * skills directory. Safe to call on every activation — `registerDebugMCPSkill`
+     * uses `fs.cp` with `force: true`, so it will refresh stale copies but is a
+     * no-op when the destination already matches.
+     */
+    private async ensureSkillRegistered(agent: AgentInfo): Promise<void> {
+        try {
+            await this.registerDebugMCPSkill(agent);
+        } catch (error) {
+            console.warn(`Failed to ensure skill registration for ${agent.name}:`, error);
+        }
+    }
+
+    private hasCodexDebugMCPSection(configContent: string): boolean {
+        const lines = configContent.replace(/\r\n/g, '\n').split('\n');
+        return lines.some(line => isCodexDebugMCPSectionHeader(line));
     }
 
     private shouldMigrateCodexConfig(configContent: string): boolean {
@@ -386,7 +468,7 @@ export class AgentConfigurationManager {
     /**
      * Add DebugMCP server configuration to the specified agent's config
      */
-    private async addDebugMCPToAgent(agent: AgentInfo): Promise<boolean> {
+    private async addDebugMCPToAgent(agent: AgentInfo): Promise<{ success: boolean; skillPath: string | null }> {
         try {
             // Ensure the config directory exists
             const configDir = path.dirname(agent.configPath);
@@ -406,7 +488,8 @@ export class AgentConfigurationManager {
                 );
 
                 console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
-                return true;
+                const skillPath = await this.registerDebugMCPSkill(agent);
+                return { success: true, skillPath };
             }
 
             let config: any = {};
@@ -439,11 +522,12 @@ export class AgentConfigurationManager {
             );
 
             console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
-            return true;
+            const skillPath = await this.registerDebugMCPSkill(agent);
+            return { success: true, skillPath };
         } catch (error) {
             console.error(`Error adding DebugMCP to ${agent.name}:`, error);
             vscode.window.showErrorMessage(`Failed to configure DebugMCP for ${agent.displayName}: ${error}`);
-            return false;
+            return { success: false, skillPath: null };
         }
     }
 
@@ -499,20 +583,30 @@ export class AgentConfigurationManager {
      */
     private async configureAgent(agent: AgentInfo): Promise<void> {
         try {
-            const success = await this.addDebugMCPToAgent(agent);
-            
+            const { success, skillPath } = await this.addDebugMCPToAgent(agent);
+
             if (success) {
-                // Show success message with green pass icon and link to open config file
-                const openConfigButton = 'Open Config';
+                const openConfigButton = 'Open MCP Config';
+                const openSkillButton = 'Open Skill';
+                const buttons: string[] = [openConfigButton];
+                if (skillPath) {
+                    buttons.push(openSkillButton);
+                }
+
                 const result = await vscode.window.showInformationMessage(
                     `✅ DebugMCP successfully configured for ${agent.displayName}`,
-                    openConfigButton
+                    ...buttons
                 );
-                
+
                 if (result === openConfigButton) {
-                    // Open the config file in VSCode
                     const configUri = vscode.Uri.file(agent.configPath);
                     await vscode.commands.executeCommand('vscode.open', configUri);
+                } else if (result === openSkillButton && skillPath) {
+                    // Open the skill's SKILL.md entry point
+                    const skillEntry = path.join(skillPath, 'SKILL.md');
+                    const target = fs.existsSync(skillEntry) ? skillEntry : skillPath;
+                    const skillUri = vscode.Uri.file(target);
+                    await vscode.commands.executeCommand('vscode.open', skillUri);
                 }
             }
         } catch (error) {

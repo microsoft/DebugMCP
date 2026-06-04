@@ -1,13 +1,15 @@
 # DebugMCP (MCP Server) - Empowering AI Agents with Operational Debugging Capabilities
 
-Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Supports **Python**, **JavaScript/TypeScript**, **Java**, **C#**, **C++**, **Go**, **Rust**, **PHP**, and **Ruby**.
+Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Compatible with any VS Code supported coding language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
+
+> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
 > 🎬 Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
 
@@ -15,7 +17,10 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
   <img src="assets/DebugMCP.gif" width="800">
 </p>
 
-> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
+## ✨ What's New in 2.0.0
+
+- **`/debug` Agent Skill** — DebugMCP now ships a companion [Agent Skill](./skills/debug/SKILL.md) that is auto-installed into each configured harness's personal skills directory (e.g. `~/.copilot/skills/debug/`). Invoke it with `/debug` in supporting agents to load the systematic debugging workflow and trigger DebugMCP tools with the right context.
+- **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` now uses the VS Code Testing API to discover and launch the test, replacing the previous best-effort path. This works reliably across language test runners that integrate with the Testing API (pytest, Jest/Vitest, Java, .NET, Go, etc.) and produces consistent breakpoint hits inside individual test cases.
 
 ## 🚀 Quick Install
 
@@ -45,7 +50,6 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| **get_debug_instructions** | Get the debugging guide with best practices and workflow instructions | None |
 | **start_debugging** | Start a debug session for a source code file | `fileFullPath` (required)<br>`workingDirectory` (required)<br>`testName` (optional)<br>`configurationName` (optional) |
 | **stop_debugging** | Stop the current debug session | None |
 | **step_over** | Execute the next line (step over function calls) | None |
@@ -60,7 +64,11 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **get_variables_values** | Get variables and their values at current execution point | `scope` (optional: 'local', 'global', 'all') |
 | **evaluate_expression** | Evaluate an expression in debug context | `expression` (required) |
 
-> **Note:** The `get_debug_instructions` tool is particularly useful for AI clients like GitHub Copilot that don't support MCP resources. It provides the same debugging guide content that is also available as an MCP resource.
+> **Note:** The MCP server intentionally exposes **tools only** — no procedural
+> instructions, no documentation resources. Workflow guidance (when to debug, how to
+> structure a root-cause investigation, language-specific quirks) lives in the companion
+> [DebugMCP Agent Skill](./skills/debug/SKILL.md) so it can be loaded into an
+> agent's prompt context independently of the MCP capability surface.
 
 ### 🎯 Debugging Best Practices
 

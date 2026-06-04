@@ -35,10 +35,16 @@ AI Agent (MCP Client)
 
 ## Key Concepts
 
-### Tools vs Resources
+### Tools only — no resources, no instructions
 
-- **Tools**: Actions the AI can perform (start debugging, step over, etc.)
-- **Resources**: Documentation the AI can read for guidance (note: some clients like GitHub Copilot don't support resources, so the `get_debug_instructions` tool is also provided)
+`DebugMCPServer` exposes **tools only**. Procedural workflow guidance (when to debug,
+how to structure a root-cause investigation, language-specific quirks) lives in the
+companion Agent Skill at `skills/debug/SKILL.md`, not in tool descriptions or MCP
+resources. This separation matches modern agent ecosystems where MCP servers provide
+*capabilities* and skills provide *procedural knowledge* an agent loads as context.
+
+Tool descriptions are intentionally terse and behavioral — they describe *what* the
+tool does, not *when* or *how* to use it in a multi-step workflow.
 
 ### Streamable HTTP Transport
 
@@ -51,14 +57,13 @@ Each request creates a new stateless `StreamableHTTPServerTransport` instance th
 
 - Class definition: `src/debugMCPServer.ts`
 - Tool registration: `setupTools()` method (uses `McpServer.registerTool()`)
-- Resource registration: `setupResources()` method (uses `McpServer.registerResource()`)
-- Server startup: `start()` method (creates express app with SSE/message routes)
+- Server startup: `start()` method (creates express app with `/mcp` route)
+- Agent Skill (companion, not part of the MCP surface): `skills/debug/SKILL.md`
 
 ## Exposed Tools
 
 | Tool | Description |
 |------|-------------|
-| `get_debug_instructions` | Get debugging guide (for clients that don't support resources) |
 | `start_debugging` | Start a debug session |
 | `stop_debugging` | Stop current session |
 | `step_over/into/out` | Stepping commands |
@@ -69,13 +74,6 @@ Each request creates a new stateless `StreamableHTTPServerTransport` instance th
 | `list_breakpoints` | List active breakpoints |
 | `get_variables_values` | Inspect variable values |
 | `evaluate_expression` | Evaluate expressions |
-
-## Exposed Resources
-
-| URI | Content |
-|-----|---------|
-| `debugmcp://docs/debug_instructions` | General debugging guide |
-| `debugmcp://docs/troubleshooting/*` | Language-specific tips |
 
 ## Configuration
 
