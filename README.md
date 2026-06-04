@@ -4,7 +4,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
@@ -17,7 +17,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
   <img src="assets/DebugMCP.gif" width="800">
 </p>
 
-## ✨ What's New in 1.2.0
+## ✨ What's New in 2.0.0
 
 - **`/debug` Agent Skill** — DebugMCP now ships a companion [Agent Skill](./skills/debug/SKILL.md) that is auto-installed into each configured harness's personal skills directory (e.g. `~/.copilot/skills/debug/`). Invoke it with `/debug` in supporting agents to load the systematic debugging workflow and trigger DebugMCP tools with the right context.
 - **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` now uses the VS Code Testing API to discover and launch the test, replacing the previous best-effort path. This works reliably across language test runners that integrate with the Testing API (pytest, Jest/Vitest, Java, .NET, Go, etc.) and produces consistent breakpoint hits inside individual test cases.
