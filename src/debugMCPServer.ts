@@ -2,8 +2,6 @@
 
 import * as vscode from 'vscode';
 import { z } from 'zod';
-import * as path from 'path';
-import * as fs from 'fs';
 import * as http from 'http';
 import {
     DebuggingExecutor,
@@ -16,8 +14,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 /**
- * Main MCP server class that exposes debugging functionality as tools and resources.
- * Uses the official @modelcontextprotocol/sdk with SSE transport over express.
+ * Main MCP server class that exposes debugging functionality as tools.
+ *
+ * Tools only. Procedural workflow guidance (when to debug, how to perform
+ * root-cause analysis, language-specific quirks) lives in the companion
+ * Agent Skill at `skills/debug/` — the MCP surface itself only describes
+ * what each tool does, not how to use them together.
  */
 /**
  * Allow-list of host names that are considered loopback.
@@ -128,7 +130,7 @@ export class DebugMCPServer {
     }
 
     /**
-     * Build a fresh McpServer with all tools and resources registered.
+     * Build a fresh McpServer with all tools registered.
      * Called once per incoming MCP request.
      */
     private createMcpServer(): McpServer {
@@ -137,35 +139,23 @@ export class DebugMCPServer {
             version: '1.0.0',
         });
         this.setupTools(server);
-        this.setupResources(server);
         return server;
     }
 
     /**
-     * Setup MCP tools that delegate to the debugging handler
+     * Setup MCP tools that delegate to the debugging handler.
+     *
+     * Tool descriptions are intentionally terse and behavioral. Procedural
+     * guidance (when to use which tool, how to perform root-cause analysis,
+     * language-specific quirks) lives in the companion Agent Skill at
+     * `skills/debug/SKILL.md`.
      */
     private setupTools(server: McpServer) {
-        // Get debug instructions tool (for clients that don't support MCP resources like GitHub Copilot)
-        server.registerTool('get_debug_instructions', {
-            description: 'Get the debugging guide with step-by-step instructions for effective debugging. ' +
-                'Returns comprehensive guidance including breakpoint strategies, root cause analysis framework, ' +
-                'and best practices. Call this before starting a debug session.',
-        }, async () => {
-            const content = await this.loadMarkdownFile('agent-resources/debug_instructions.md');
-            return { content: [{ type: 'text' as const, text: content }] };
-        });
-
         // Start debugging tool
         server.registerTool('start_debugging', {
-            description: 'IMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
-                '\n\nUSE THIS WHEN:' +
-                '\n• Any bug, error, or unexpected behavior occurs' +
-                '\n• Asked to debug a unit test' +
-                '\n• Variables have wrong/null values' +
-                '\n• Functions return incorrect results' +
-                '\n• Code behaves differently than expected' +
-                '\n• User reports "it doesn\'t work"' +
-                '\n\n⚠️ CRITICAL: Before using this tool, first call get_debug_instructions or read debugmcp://docs/debug_instructions resource!',
+            description: 'Start a VS Code debug session for a source file, optionally for a single test method. ' +
+                'Use when investigating bugs, failing tests, wrong/null variable values, unexpected runtime behavior, ' +
+                'or any "it doesn\'t work" report where stepping through the code is cheaper than speculation.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
@@ -293,78 +283,6 @@ export class DebugMCPServer {
             const result = await this.debuggingHandler.handleEvaluateExpression(args);
             return { content: [{ type: 'text' as const, text: result }] };
         });
-    }
-
-    /**
-     * Setup MCP resources for documentation
-     */
-    private setupResources(server: McpServer) {
-        // Add MCP resources for debugging documentation
-        server.registerResource('Debugging Instructions Guide', 'debugmcp://docs/debug_instructions', {
-            description: 'Step-by-step instructions for debugging with DebugMCP',
-            mimeType: 'text/markdown',
-        }, async (uri: URL) => {
-            const content = await this.loadMarkdownFile('agent-resources/debug_instructions.md');
-            return {
-                contents: [{
-                    uri: uri.href,
-                    mimeType: 'text/markdown',
-                    text: content,
-                }]
-            };
-        });
-
-        // Add language-specific resources
-        const languages = ['python', 'javascript', 'java', 'csharp'];
-        const languageTitles: Record<string, string> = {
-            'python': 'Python Debugging Tips',
-            'javascript': 'JavaScript Debugging Tips',
-            'java': 'Java Debugging Tips',
-            'csharp': 'C# Debugging Tips'
-        };
-
-        languages.forEach(language => {
-            server.registerResource(
-                languageTitles[language],
-                `debugmcp://docs/troubleshooting/${language}`,
-                {
-                    description: `Debugging tips specific to ${language}`,
-                    mimeType: 'text/markdown',
-                },
-                async (uri: URL) => {
-                    const content = await this.loadMarkdownFile(`agent-resources/troubleshooting/${language}.md`);
-                    return {
-                        contents: [{
-                            uri: uri.href,
-                            mimeType: 'text/markdown',
-                            text: content,
-                        }]
-                    };
-                }
-            );
-        });
-    }
-
-    /**
-     * Load content from a Markdown file in the docs directory
-     */
-    private async loadMarkdownFile(relativePath: string): Promise<string> {
-        try {
-            // Get the extension's installation directory
-            const extensionPath = __dirname; // This points to the compiled extension's directory
-            const docsPath = path.join(extensionPath, '..', 'docs', relativePath);
-
-            console.log(`Loading markdown file from: ${docsPath}`);
-
-            // Read the file content
-            const content = await fs.promises.readFile(docsPath, 'utf8');
-            console.log(`Successfully loaded ${relativePath}, content length: ${content.length}`);
-
-            return content;
-        } catch (error) {
-            console.error(`Failed to load ${relativePath}:`, error);
-            return `Error loading documentation from ${relativePath}: ${error}`;
-        }
     }
 
     /**
