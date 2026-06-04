@@ -81,7 +81,6 @@ export function isLoopbackOrigin(originHeader: string | undefined): boolean {
 }
 
 export class DebugMCPServer {
-    private mcpServer: McpServer | null = null;
     private httpServer: http.Server | null = null;
     private port: number;
     private host: string;
@@ -98,29 +97,41 @@ export class DebugMCPServer {
     }
 
     /**
-     * Initialize the MCP server
+     * Initialize the MCP server factory.
+     *
+     * NOTE: We no longer hold a singleton McpServer here. The stateless
+     * StreamableHTTPServerTransport requires a fresh McpServer per request
+     * (calling .connect() twice on the same server throws "Already connected
+     * to a transport"). The /mcp handler builds one on demand via
+     * createMcpServer().
      */
     async initialize() {
         if (this.initialized) {
             return;
         }
+        this.initialized = true;
+    }
 
-        this.mcpServer = new McpServer({
+    /**
+     * Build a fresh McpServer with all tools and resources registered.
+     * Called once per incoming MCP request.
+     */
+    private createMcpServer(): McpServer {
+        const server = new McpServer({
             name: 'debugmcp',
             version: '1.0.0',
         });
-
-        this.setupTools();
-        this.setupResources();
-        this.initialized = true;
+        this.setupTools(server);
+        this.setupResources(server);
+        return server;
     }
 
     /**
      * Setup MCP tools that delegate to the debugging handler
      */
-    private setupTools() {
+    private setupTools(server: McpServer) {
         // Get debug instructions tool (for clients that don't support MCP resources like GitHub Copilot)
-        this.mcpServer!.registerTool('get_debug_instructions', {
+        server.registerTool('get_debug_instructions', {
             description: 'Get the debugging guide with step-by-step instructions for effective debugging. ' +
                 'Returns comprehensive guidance including breakpoint strategies, root cause analysis framework, ' +
                 'and best practices. Call this before starting a debug session.',
@@ -130,7 +141,7 @@ export class DebugMCPServer {
         });
 
         // Start debugging tool
-        this.mcpServer!.registerTool('start_debugging', {
+        server.registerTool('start_debugging', {
             description: 'IMPORTANT DEBUGGING TOOL - Start a debug session for a code file' +
                 '\n\nUSE THIS WHEN:' +
                 '\n• Any bug, error, or unexpected behavior occurs' +
@@ -159,7 +170,7 @@ export class DebugMCPServer {
         });
 
         // Stop debugging tool
-        this.mcpServer!.registerTool('stop_debugging', {
+        server.registerTool('stop_debugging', {
             description: 'Stop the current debug session',
         }, async () => {
             const result = await this.debuggingHandler.handleStopDebugging();
@@ -167,7 +178,7 @@ export class DebugMCPServer {
         });
 
         // Step over tool
-        this.mcpServer!.registerTool('step_over', {
+        server.registerTool('step_over', {
             description: 'Execute the current line of code without diving into it.',
         }, async () => {
             const result = await this.debuggingHandler.handleStepOver();
@@ -175,7 +186,7 @@ export class DebugMCPServer {
         });
 
         // Step into tool
-        this.mcpServer!.registerTool('step_into', {
+        server.registerTool('step_into', {
             description: 'Dive into the current line of code.',
         }, async () => {
             const result = await this.debuggingHandler.handleStepInto();
@@ -183,7 +194,7 @@ export class DebugMCPServer {
         });
 
         // Step out tool
-        this.mcpServer!.registerTool('step_out', {
+        server.registerTool('step_out', {
             description: 'Step out of the current function',
         }, async () => {
             const result = await this.debuggingHandler.handleStepOut();
@@ -191,7 +202,7 @@ export class DebugMCPServer {
         });
 
         // Continue execution tool
-        this.mcpServer!.registerTool('continue_execution', {
+        server.registerTool('continue_execution', {
             description: 'Resume program execution until the next breakpoint is hit or the program completes.',
         }, async () => {
             const result = await this.debuggingHandler.handleContinue();
@@ -199,7 +210,7 @@ export class DebugMCPServer {
         });
 
         // Restart debugging tool
-        this.mcpServer!.registerTool('restart_debugging', {
+        server.registerTool('restart_debugging', {
             description: 'Restart the debug session from the beginning with the same configuration.',
         }, async () => {
             const result = await this.debuggingHandler.handleRestart();
@@ -207,7 +218,7 @@ export class DebugMCPServer {
         });
 
         // Add breakpoint tool
-        this.mcpServer!.registerTool('add_breakpoint', {
+        server.registerTool('add_breakpoint', {
             description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. Breakpoints let you inspect variables and control flow at exact moments.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
@@ -219,7 +230,7 @@ export class DebugMCPServer {
         });
 
         // Remove breakpoint tool
-        this.mcpServer!.registerTool('remove_breakpoint', {
+        server.registerTool('remove_breakpoint', {
             description: 'Remove a breakpoint that is no longer needed.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
@@ -231,7 +242,7 @@ export class DebugMCPServer {
         });
 
         // Clear all breakpoints tool
-        this.mcpServer!.registerTool('clear_all_breakpoints', {
+        server.registerTool('clear_all_breakpoints', {
             description: 'Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.',
         }, async () => {
             const result = await this.debuggingHandler.handleClearAllBreakpoints();
@@ -239,7 +250,7 @@ export class DebugMCPServer {
         });
 
         // List breakpoints tool
-        this.mcpServer!.registerTool('list_breakpoints', {
+        server.registerTool('list_breakpoints', {
             description: 'View all currently set breakpoints across all files.',
         }, async () => {
             const result = await this.debuggingHandler.handleListBreakpoints();
@@ -247,7 +258,7 @@ export class DebugMCPServer {
         });
 
         // Get variables tool
-        this.mcpServer!.registerTool('get_variables_values', {
+        server.registerTool('get_variables_values', {
             description: 'Inspect all variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does.',
             inputSchema: {
                 scope: z.enum(['local', 'global', 'all']).optional().describe("Variable scope: 'local', 'global', or 'all'"),
@@ -258,7 +269,7 @@ export class DebugMCPServer {
         });
 
         // Evaluate expression tool
-        this.mcpServer!.registerTool('evaluate_expression', {
+        server.registerTool('evaluate_expression', {
             description: 'Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.',
             inputSchema: {
                 expression: z.string().describe('Expression to evaluate in the current programming language context'),
@@ -272,9 +283,9 @@ export class DebugMCPServer {
     /**
      * Setup MCP resources for documentation
      */
-    private setupResources() {
+    private setupResources(server: McpServer) {
         // Add MCP resources for debugging documentation
-        this.mcpServer!.registerResource('Debugging Instructions Guide', 'debugmcp://docs/debug_instructions', {
+        server.registerResource('Debugging Instructions Guide', 'debugmcp://docs/debug_instructions', {
             description: 'Step-by-step instructions for debugging with DebugMCP',
             mimeType: 'text/markdown',
         }, async (uri: URL) => {
@@ -298,7 +309,7 @@ export class DebugMCPServer {
         };
 
         languages.forEach(language => {
-            this.mcpServer!.registerResource(
+            server.registerResource(
                 languageTitles[language],
                 `debugmcp://docs/troubleshooting/${language}`,
                 {
@@ -438,20 +449,26 @@ export class DebugMCPServer {
                 next(error);
             });
 
-            // Streamable HTTP endpoint — handles MCP protocol messages
+            // Streamable HTTP endpoint — handles MCP protocol messages.
+            // A fresh McpServer + transport pair is built per request because
+            // StreamableHTTPServerTransport in stateless mode (sessionIdGenerator: undefined)
+            // owns its connection; reusing a single McpServer across requests
+            // throws "Already connected to a transport" on the second call.
             app.post('/mcp', async (req: any, res: any) => {
                 logger.info('New MCP request received');
 
+                const server = this.createMcpServer();
                 const transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: undefined, // Stateless mode - no session management
                 });
                 res.on('close', () => {
                     transport.close();
+                    server.close();
                     logger.info('MCP transport closed');
                 });
 
                 try {
-                    await this.mcpServer!.connect(transport);
+                    await server.connect(transport);
                     await transport.handleRequest(req, res, req.body);
                 } catch (error) {
                     logger.error('Error while handling MCP request', error);
