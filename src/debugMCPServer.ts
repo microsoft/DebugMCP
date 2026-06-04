@@ -18,7 +18,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
  *
  * Tools only. Procedural workflow guidance (when to debug, how to perform
  * root-cause analysis, language-specific quirks) lives in the companion
- * Agent Skill at `skills/debug/` — the MCP surface itself only describes
+ * Agent Skill at `skills/really-debug/` — the MCP surface itself only describes
  * what each tool does, not how to use them together.
  */
 /**
@@ -148,7 +148,7 @@ export class DebugMCPServer {
      * Tool descriptions are intentionally terse and behavioral. Procedural
      * guidance (when to use which tool, how to perform root-cause analysis,
      * language-specific quirks) lives in the companion Agent Skill at
-     * `skills/debug/SKILL.md`.
+     * `skills/really-debug/SKILL.md`.
      */
     private setupTools(server: McpServer) {
         // Start debugging tool

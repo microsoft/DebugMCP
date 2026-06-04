@@ -19,7 +19,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 ## ✨ What's New in 2.0.0
 
-- **`/debug` Agent Skill** — DebugMCP now ships a companion [Agent Skill](./skills/debug/SKILL.md) that is auto-installed into each configured harness's personal skills directory (e.g. `~/.copilot/skills/debug/`). Invoke it with `/debug` in supporting agents to load the systematic debugging workflow and trigger DebugMCP tools with the right context.
+- **`/really-debug` Agent Skill** — DebugMCP now ships a companion [Agent Skill](./skills/really-debug/SKILL.md) that is auto-installed into each configured harness's personal skills directory (e.g. `~/.copilot/skills/really-debug/`). Invoke it with `/really-debug` in supporting agents to load the systematic debugging workflow and trigger DebugMCP tools with the right context.
 - **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` now uses the VS Code Testing API to discover and launch the test, replacing the previous best-effort path. This works reliably across language test runners that integrate with the Testing API (pytest, Jest/Vitest, Java, .NET, Go, etc.) and produces consistent breakpoint hits inside individual test cases.
 
 ## 🚀 Quick Install
@@ -67,7 +67,7 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 > **Note:** The MCP server intentionally exposes **tools only** — no procedural
 > instructions, no documentation resources. Workflow guidance (when to debug, how to
 > structure a root-cause investigation, language-specific quirks) lives in the companion
-> [DebugMCP Agent Skill](./skills/debug/SKILL.md) so it can be loaded into an
+> [DebugMCP Agent Skill](./skills/really-debug/SKILL.md) so it can be loaded into an
 > agent's prompt context independently of the MCP capability surface.
 
 ### 🎯 Debugging Best Practices

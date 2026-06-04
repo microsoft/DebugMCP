@@ -203,7 +203,7 @@ export class AgentConfigurationManager {
      * Path to the debugmcp skill bundled with the extension.
      */
     private getBundledSkillPath(): string {
-        return path.join(this.context.extensionPath, 'skills', 'debug');
+        return path.join(this.context.extensionPath, 'skills', 'really-debug');
     }
 
     /**
@@ -220,12 +220,26 @@ export class AgentConfigurationManager {
         }
 
         const skillsDir = this.getSkillsDirForAgent(agent);
-        const destination = path.join(skillsDir, 'debug');
+        const destination = path.join(skillsDir, 'really-debug');
 
         try {
             await fs.promises.mkdir(skillsDir, { recursive: true });
             await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
             console.log(`Successfully registered debugmcp skill for ${agent.name} at ${destination}`);
+
+            // Back-compat cleanup: earlier 1.2.0 builds installed the skill at
+            // `<skillsDir>/debug`. Remove the stale copy if it's still around so
+            // users don't end up with two competing entries.
+            const legacyDestination = path.join(skillsDir, 'debug');
+            if (fs.existsSync(legacyDestination)) {
+                try {
+                    await fs.promises.rm(legacyDestination, { recursive: true, force: true });
+                    console.log(`Removed legacy debugmcp skill at ${legacyDestination}`);
+                } catch (cleanupError) {
+                    console.warn(`Failed to remove legacy debugmcp skill at ${legacyDestination}:`, cleanupError);
+                }
+            }
+
             return destination;
         } catch (error) {
             console.warn(`Failed to register debugmcp skill for ${agent.name} at ${destination}:`, error);
