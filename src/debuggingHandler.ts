@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as vscode from 'vscode';
-import { IDebugConfigurationManager } from './utils/debugConfigurationManager';
+import { DebugConfigurationManager, IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { DebugState } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { logger } from './utils/logger';
@@ -51,30 +51,69 @@ export class DebuggingHandler implements IDebuggingHandler {
         configurationName?: string;
     }): Promise<string> {
         const { fileFullPath, workingDirectory, testName, configurationName } = args;
+        const hasExplicitConfig = !!configurationName &&
+            configurationName.trim() !== '' &&
+            configurationName !== DebugConfigurationManager.getAutoLaunchConfigName();
 		
         try {
-            // Get debug configuration from launch.json or create default
-            const debugConfig = await this.configManager.getDebugConfig(
-                workingDirectory, 
-                fileFullPath, 
-                configurationName,
-                testName
-            );
+            logger.info(`handleStartDebugging: file=${fileFullPath} test=${testName ?? '<none>'} config=${configurationName ?? '<auto>'}`);
 
-            const started = await this.executor.startDebugging(workingDirectory, debugConfig);
+            // Start listening BEFORE we trigger the debug session, otherwise
+            // `onDidStartDebugSession` / `onDidChangeActiveStackItem` can fire
+            // during the trigger call (testing.debugAtCursor / vscode.debug.startDebugging
+            // can resolve only after the session is already up) and we'd miss them.
+            const readyPromise = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
+
+            let started: boolean;
+            let configDescription: string;
+            let testRunComplete: Promise<void> | undefined;
+
+            if (testName && !hasExplicitConfig) {
+                // Route through VS Code's Testing API. This works for any language
+                // whose extension registers a TestController and correctly handles
+                // child-process attach for runners like `dotnet test`.
+                const dispatch = await this.executor.debugTestAtCursor(fileFullPath, testName);
+                started = dispatch.started;
+                testRunComplete = dispatch.runComplete;
+                configDescription = `testing.debugAtCursor (test: ${testName})`;
+            } else {
+                const debugConfig = await this.configManager.getDebugConfig(
+                    workingDirectory,
+                    fileFullPath,
+                    configurationName
+                );
+                started = await this.executor.startDebugging(workingDirectory, debugConfig);
+                const configName = typeof debugConfig === 'string' ? debugConfig : debugConfig.name;
+                configDescription = configName ? `configuration '${configName}'` : 'default configuration';
+            }
+
             if (started) {
-                // Wait for debug session to become active using exponential backoff
-                const sessionActive = await this.waitForActiveDebugSession();
-                
-                if (!sessionActive) {
-                    throw new Error('Debug session started but failed to become active within timeout period');
-                }
-                
-                // return also the current state
-                const configInfo = debugConfig.name ? ` using configuration '${debugConfig.name}'` : '';
+                // Race the readiness signal against the test run completion. For .NET
+                // (and any runner where onDidTerminateDebugSession doesn't fire
+                // reliably for parent/child sessions), the test-run-complete signal
+                // is what tells us a clean run finished without ever pausing.
+                const readyState = testRunComplete
+                    ? await Promise.race([
+                        readyPromise,
+                        testRunComplete.then(() => 'terminated' as const)
+                    ])
+                    : await readyPromise;
+
+                logger.info(`handleStartDebugging: readyState=${readyState}, fetching current state…`);
                 const testInfo = testName ? ` (test: ${testName})` : '';
                 const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${currentState.toString()}`;
+                logger.info('handleStartDebugging: got current state, returning response');
+
+                switch (readyState) {
+                    case 'stopped':
+                        return `Debug session stopped at breakpoint for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
+                    case 'terminated':
+                        return `Debug session for ${fileFullPath} ran to completion without stopping (no breakpoint hit). Using ${configDescription}${testInfo}. Final state: ${currentState.toString()}`;
+                    case 'no-session':
+                        throw new Error('Debug session failed to start within the timeout period. Make sure the appropriate language extension is installed and any required build step succeeded.');
+                    case 'timeout':
+                        return `Debug session is running but did not stop or terminate within the timeout for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
+                }
             } else {
                 throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
             }
@@ -426,35 +465,6 @@ export class DebuggingHandler implements IDebuggingHandler {
      */
     public async isDebuggingActive(): Promise<boolean> {
         return await this.executor.hasActiveSession();
-    }
-
-    /**
-     * Wait for debug session to become active using exponential backoff starting from 1 second
-     */
-    private async waitForActiveDebugSession(): Promise<boolean> {
-        const baseDelay = 1000; // Start with 1 second
-        const maxDelay = 10000; // Cap at 10 seconds
-        
-        const startTime = Date.now();
-        let attempt = 0;
-        
-        while (Date.now() - startTime < this.timeoutInSeconds * 1000) {
-            if (await this.executor.hasActiveSession()) {
-                logger.info('Debug session is now active!');
-                return true;
-            }
-            
-            logger.info(`[Attempt ${attempt + 1}] Waiting for debug session to become active...`);
-
-            // Calculate delay using exponential backoff with jitter
-            const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-            const jitteredDelay = delay + Math.random() * 200; // Add up to 200ms jitter
-            
-            await new Promise(resolve => setTimeout(resolve, jitteredDelay));
-            attempt++;
-        }
-        
-        return false; // Timeout reached
     }
 
     /**

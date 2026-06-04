@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP",
   "description": "Let AI agents debug your code inside VS Code — breakpoints, step-through execution, variable inspection, and expression evaluation. Automatically exposes itself as an MCP (Model Context Protocol) server for seamless integration with AI assistants.",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
@@ -15,6 +15,7 @@
   },
   "keywords": [
     "debug",
+    "debugmcp",
     "mcp",
     "debugging",
     "ai",
@@ -69,13 +70,19 @@
       "properties": {
         "debugmcp.timeoutInSeconds": {
           "type": "number",
-          "default": 180,
+          "default": 300,
           "description": "Timeout in seconds"
         },
         "debugmcp.serverPort": {
           "type": "number",
           "default": 3001,
           "description": "Port number for the DebugMCP server"
+        },
+        "debugmcp.bindHost": {
+          "type": ["string", "array"],
+          "items": { "type": "string" },
+          "default": ["127.0.0.1", "::1"],
+          "markdownDescription": "Network interface(s) the DebugMCP HTTP server binds to. **Defaults to `[\"127.0.0.1\", \"::1\"]` (IPv4 + IPv6 loopback only).** Accepts a single string or an array of strings. ⚠️ **Security warning:** changing this to `0.0.0.0` or a LAN address exposes the unauthenticated MCP debugger — including arbitrary code execution via `evaluate_expression` and `start_debugging` — to every host on the network. Only change this if you fully understand the risk."
         }
       }
     }
@@ -92,7 +99,6 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/express": "^5.0.3",
     "express": "^5.2.1",
-    "jsonc-parser": "^3.3.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
