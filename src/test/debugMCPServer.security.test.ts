@@ -6,7 +6,7 @@ import * as net from 'net';
 import * as os from 'os';
 import { DebugMCPServer, isLoopbackHost, isLoopbackOrigin } from '../debugMCPServer';
 
-suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
+suite('DebugMCPServer security', () => {
 
     suite('isLoopbackHost', () => {
         test('accepts loopback hostnames with or without port', () => {
@@ -28,6 +28,18 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
             assert.strictEqual(isLoopbackHost('169.254.169.254'), false);
             assert.strictEqual(isLoopbackHost(''), false);
             assert.strictEqual(isLoopbackHost(undefined), false);
+        });
+
+        test('with expectedPort, rejects loopback host whose port does not match', () => {
+            assert.strictEqual(isLoopbackHost('localhost:3001', 3001), true);
+            assert.strictEqual(isLoopbackHost('127.0.0.1:3001', 3001), true);
+            assert.strictEqual(isLoopbackHost('[::1]:3001', 3001), true);
+            // Absent port is still allowed (some clients omit it for default ports).
+            assert.strictEqual(isLoopbackHost('localhost', 3001), true);
+            // Wrong port is rejected — prevents Host: localhost:99999 sneaking through.
+            assert.strictEqual(isLoopbackHost('localhost:99999', 3001), false);
+            assert.strictEqual(isLoopbackHost('127.0.0.1:8080', 3001), false);
+            assert.strictEqual(isLoopbackHost('[::1]:8080', 3001), false);
         });
     });
 
@@ -55,7 +67,7 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
         let server: DebugMCPServer;
 
         suiteSetup(async () => {
-            server = new DebugMCPServer(port, 60, '127.0.0.1');
+            server = new DebugMCPServer(port, 60);
             await server.initialize();
             await server.start();
         });
@@ -64,10 +76,10 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
             await server.stop();
         });
 
-        function postMcp(headers: http.OutgoingHttpHeaders): Promise<{ status: number; body: string }> {
+        function postMcp(headers: http.OutgoingHttpHeaders, hostAddr: string = '127.0.0.1'): Promise<{ status: number; body: string }> {
             const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
             const opts: http.RequestOptions = {
-                host: '127.0.0.1',
+                host: hostAddr,
                 port,
                 path: '/mcp',
                 method: 'POST',
@@ -90,7 +102,7 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
             });
         }
 
-        test('ICM 603080: server is NOT reachable on non-loopback interface', async () => {
+        test('server is NOT reachable on non-loopback interface (LAN exposure)', async () => {
             // Find a non-loopback IPv4 interface on this machine.
             const interfaces = os.networkInterfaces();
             let lanAddr: string | undefined;
@@ -121,14 +133,19 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
             });
         });
 
-        test('ICM 611073: request with attacker Host header is rejected (403)', async () => {
+        test('request with attacker Host header is rejected (403) — DNS rebinding defense', async () => {
             const res = await postMcp({ Host: 'attacker.example' });
             assert.strictEqual(res.status, 403, `expected 403 for DNS-rebinding Host header, got ${res.status}: ${res.body}`);
         });
 
-        test('ICM 611073: request with non-loopback Origin header is rejected (403)', async () => {
+        test('request with non-loopback Origin header is rejected (403)', async () => {
             const res = await postMcp({ Host: '127.0.0.1', Origin: 'https://attacker.example' });
             assert.strictEqual(res.status, 403, `expected 403 for attacker Origin, got ${res.status}: ${res.body}`);
+        });
+
+        test('request with loopback Host but mismatched port is rejected (403)', async () => {
+            const res = await postMcp({ Host: 'localhost:99999' });
+            assert.strictEqual(res.status, 403, `expected 403 for wrong-port Host header, got ${res.status}: ${res.body}`);
         });
 
         test('loopback request with valid Host header is accepted', async () => {
@@ -137,6 +154,19 @@ suite('DebugMCPServer security (ICM 31000000603080 / 31000000611073)', () => {
             // We don't validate the exact response shape because MCP handshake semantics
             // are outside the scope of this security test.
             assert.notStrictEqual(res.status, 403, `loopback request was incorrectly rejected: ${res.body}`);
+        });
+
+        test('server is reachable over IPv6 loopback (::1)', async () => {
+            try {
+                const res = await postMcp({ Host: `[::1]:${port}` }, '::1');
+                assert.notStrictEqual(res.status, 403, `IPv6 loopback request was incorrectly rejected: ${res.body}`);
+            } catch (err: any) {
+                // ENETUNREACH / EAFNOSUPPORT — host has no IPv6 stack; not a failure of the server.
+                if (err && (err.code === 'ENETUNREACH' || err.code === 'EAFNOSUPPORT' || err.code === 'EADDRNOTAVAIL')) {
+                    return;
+                }
+                throw err;
+            }
         });
     });
 });

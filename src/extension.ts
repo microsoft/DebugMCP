@@ -17,16 +17,19 @@ export async function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);
     const serverPort = config.get<number>('serverPort', 3001);
-    const bindHost = config.get<string>('bindHost', '127.0.0.1');
+    const bindHostSetting = config.get<string | string[]>('bindHost', ['127.0.0.1', '::1']);
+    const bindHosts = Array.isArray(bindHostSetting) ? bindHostSetting : [bindHostSetting];
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
-    logger.info(`Using bindHost: ${bindHost}`);
-    if (bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost') {
+    logger.info(`Using bindHost: ${bindHosts.join(', ')}`);
+    const loopbackHosts = new Set(['127.0.0.1', '::1', 'localhost']);
+    const nonLoopback = bindHosts.filter(h => !loopbackHosts.has(h));
+    if (nonLoopback.length > 0) {
         logger.warn(
-            `DebugMCP is bound to '${bindHost}' instead of loopback. ` +
+            `DebugMCP is bound to '${nonLoopback.join(', ')}' instead of loopback. ` +
             `This exposes the unauthenticated debugger to other hosts on the network. ` +
-            `Set 'debugmcp.bindHost' back to '127.0.0.1' unless you fully trust the network.`
+            `Set 'debugmcp.bindHost' back to the default loopback unless you fully trust the network.`
         );
     }
 
@@ -44,7 +47,7 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
         logger.info('Starting MCP server initialization...');
         
-        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds, bindHost);
+        mcpServer = new DebugMCPServer(serverPort, timeoutInSeconds, bindHosts);
         await mcpServer.initialize();
         await mcpServer.start();
         

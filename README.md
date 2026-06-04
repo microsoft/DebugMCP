@@ -275,7 +275,7 @@ Configure DebugMCP behavior in VSCode settings:
 {
   "debugmcp.serverPort": 3001,
   "debugmcp.timeoutInSeconds": 180,
-  "debugmcp.bindHost": "127.0.0.1"
+  "debugmcp.bindHost": ["127.0.0.1", "::1"]
 }
 ```
 
@@ -283,14 +283,14 @@ Configure DebugMCP behavior in VSCode settings:
 |---------|---------|-------------|
 | `debugmcp.serverPort` | `3001` | Port number for the MCP server |
 | `debugmcp.timeoutInSeconds` | `180` | Timeout for debugging operations |
-| `debugmcp.bindHost` | `127.0.0.1` | Network interface the HTTP server binds to. See [Security model](#security-model) before changing. |
+| `debugmcp.bindHost` | `["127.0.0.1", "::1"]` | Network interface(s) the HTTP server binds to. Accepts a string or array of strings. See [Security model](#security-model) before changing. |
 
 ### Security model
 
 DebugMCP exposes powerful debugger primitives (`evaluate_expression`, `start_debugging`, …) over an unauthenticated local HTTP endpoint. To keep that surface safe, the server enforces two controls:
 
-1. **Loopback-only bind.** The HTTP server binds to `127.0.0.1` by default, so other hosts on your network cannot reach `http://<your-ip>:3001/mcp`. The `debugmcp.bindHost` setting lets you opt into a different interface (for example, when forwarding the port into a remote container), but doing so exposes the unauthenticated debugger to anything that can route to that address — do not point it at `0.0.0.0` or a LAN address on an untrusted network.
-2. **Host / Origin header validation.** Every request must carry a `Host` header naming a loopback address (`localhost`, `127.0.0.1`, or `[::1]`); requests with any other `Host` — including those that arrive via DNS rebinding from a malicious webpage — are rejected with HTTP 403. The same check is applied to the `Origin` header when present.
+1. **Loopback-only bind.** The HTTP server binds to the IPv4 and IPv6 loopback addresses (`127.0.0.1` and `::1`) by default, so other hosts on your network cannot reach `http://<your-ip>:3001/mcp`. Binding both families ensures clients that resolve `localhost` to either family connect successfully. The `debugmcp.bindHost` setting (string or array of strings) lets you opt into a different interface (for example, when forwarding the port into a remote container), but doing so exposes the unauthenticated debugger to anything that can route to that address — do not point it at `0.0.0.0` or a LAN address on an untrusted network.
+2. **Host / Origin header validation.** Every request must carry a `Host` header naming a loopback address (`localhost`, `127.0.0.1`, or `[::1]`); any port suffix in the `Host` must also match the server's listening port. Requests with any other `Host` — including those that arrive via DNS rebinding from a malicious webpage — are rejected with HTTP 403. The same loopback check is applied to the `Origin` header when present.
 
 
 ## FAQ

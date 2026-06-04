@@ -33,33 +33,48 @@ const LOOPBACK_HOSTNAMES = new Set<string>([
 ]);
 
 /**
- * Extract just the hostname portion from a Host header value,
- * stripping any port and surrounding brackets for IPv6 literals.
+ * Split a Host header value into its hostname and optional port parts,
+ * stripping surrounding brackets for IPv6 literals.
  */
-function extractHostname(hostHeader: string): string {
+function parseHostHeader(hostHeader: string): { hostname: string; port: string | undefined } {
     const trimmed = hostHeader.trim().toLowerCase();
     // IPv6 literal in brackets, optionally with :port suffix
     if (trimmed.startsWith('[')) {
         const closingBracketIndex = trimmed.indexOf(']');
         if (closingBracketIndex === -1) {
-            return trimmed; // malformed — let caller reject
+            return { hostname: trimmed, port: undefined }; // malformed — let caller reject
         }
-        return trimmed.substring(0, closingBracketIndex + 1);
+        const hostname = trimmed.substring(0, closingBracketIndex + 1);
+        const rest = trimmed.substring(closingBracketIndex + 1);
+        const port = rest.startsWith(':') ? rest.substring(1) : undefined;
+        return { hostname, port };
     }
     // IPv4 or DNS name with optional :port
     const colonIndex = trimmed.indexOf(':');
-    return colonIndex === -1 ? trimmed : trimmed.substring(0, colonIndex);
+    if (colonIndex === -1) {
+        return { hostname: trimmed, port: undefined };
+    }
+    return { hostname: trimmed.substring(0, colonIndex), port: trimmed.substring(colonIndex + 1) };
 }
 
 /**
  * Returns true when the given Host header value names a loopback address.
+ * If expectedPort is provided, any port suffix in the header must match it
+ * (an absent port is allowed). This prevents requests aimed at a different
+ * port (e.g. Host: localhost:99999) from satisfying the allow-list.
  */
-export function isLoopbackHost(hostHeader: string | undefined): boolean {
+export function isLoopbackHost(hostHeader: string | undefined, expectedPort?: number): boolean {
     if (!hostHeader) {
         return false;
     }
-    const hostname = extractHostname(hostHeader);
-    return LOOPBACK_HOSTNAMES.has(hostname);
+    const { hostname, port } = parseHostHeader(hostHeader);
+    if (!LOOPBACK_HOSTNAMES.has(hostname)) {
+        return false;
+    }
+    if (expectedPort !== undefined && port !== undefined && port !== String(expectedPort)) {
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -81,19 +96,19 @@ export function isLoopbackOrigin(originHeader: string | undefined): boolean {
 }
 
 export class DebugMCPServer {
-    private httpServer: http.Server | null = null;
+    private httpServers: http.Server[] = [];
     private port: number;
-    private host: string;
+    private hosts: string[];
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
 
-    constructor(port: number, timeoutInSeconds: number, host: string = '127.0.0.1') {
+    constructor(port: number, timeoutInSeconds: number, host: string | string[] = ['127.0.0.1', '::1']) {
         // Initialize the debugging components with dependency injection
         const executor = new DebuggingExecutor();
         const configManager = new ConfigurationManager();
         this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
         this.port = port;
-        this.host = host;
+        this.hosts = Array.isArray(host) ? host : [host];
     }
 
     /**
@@ -392,7 +407,7 @@ export class DebugMCPServer {
         }
 
         try {
-            logger.info(`Starting DebugMCP server on ${this.host}:${this.port}...`);
+            logger.info(`Starting DebugMCP server on ${this.hosts.join(', ')}:${this.port}...`);
 
             // Dynamically import express (ES module)
             const expressModule = await import('express');
@@ -404,13 +419,13 @@ export class DebugMCPServer {
             // its domain to 127.0.0.1 will still send Host/Origin = attacker.example,
             // which we reject before any MCP handler runs.
             app.use((req: any, res: any, next: any) => {
-                if (!isLoopbackHost(req.headers['host'])) {
-                    logger.warn(`Rejecting request with non-loopback Host header: ${req.headers['host']}`);
+                if (!isLoopbackHost(req.headers['host'], this.port)) {
+                    logger.warn(`Rejecting request with non-loopback or wrong-port Host header: ${req.headers['host']}`);
                     res.status(403).json({
                         jsonrpc: '2.0',
                         error: {
                             code: -32000,
-                            message: 'Forbidden: Host header is not a loopback address'
+                            message: 'Forbidden: Host header is not a loopback address on the expected port'
                         },
                         id: null
                     });
@@ -516,15 +531,30 @@ export class DebugMCPServer {
                 });
             });
 
-            // Start HTTP server, bound to the configured host (loopback by default)
-            await new Promise<void>((resolve, reject) => {
-                this.httpServer = app.listen(this.port, this.host, () => {
-                    resolve();
+            // Start HTTP server(s), bound to each configured host (loopback IPv4 + IPv6 by default).
+            // Binding to '127.0.0.1' alone does not cover clients that resolve `localhost` to `::1`
+            // (common on IPv6-preferred systems), so we listen on both loopback families explicitly.
+            for (const host of this.hosts) {
+                await new Promise<void>((resolve, reject) => {
+                    const server = app.listen(this.port, host, () => {
+                        this.httpServers.push(server);
+                        resolve();
+                    });
+                    server.on('error', (err: NodeJS.ErrnoException) => {
+                        // EADDRINUSE on the IPv6 loopback is expected on some platforms (e.g. Linux
+                        // with net.ipv6.bindv6only=0) where the IPv4 bind already covers IPv6 via
+                        // dual-stack mapping. Treat as a soft warning instead of a hard failure.
+                        if (err.code === 'EADDRINUSE' && this.httpServers.length > 0) {
+                            logger.warn(`Skipping bind on ${host}:${this.port} (already covered by another loopback bind)`);
+                            resolve();
+                            return;
+                        }
+                        reject(err);
+                    });
                 });
-                this.httpServer.on('error', reject);
-            });
+            }
 
-            logger.info(`DebugMCP server started successfully on ${this.host}:${this.port}`);
+            logger.info(`DebugMCP server started successfully on ${this.hosts.join(', ')}:${this.port}`);
 
         } catch (error) {
             logger.error(`Failed to start DebugMCP server`, error);
@@ -536,12 +566,12 @@ export class DebugMCPServer {
      * Stop the MCP server
      */
     async stop() {
-        // Close the HTTP server
-        if (this.httpServer) {
-            await new Promise<void>((resolve) => {
-                this.httpServer!.close(() => resolve());
-            });
-            this.httpServer = null;
+        // Close all HTTP servers
+        if (this.httpServers.length > 0) {
+            await Promise.all(this.httpServers.map(server =>
+                new Promise<void>((resolve) => server.close(() => resolve()))
+            ));
+            this.httpServers = [];
         }
 
         logger.info('DebugMCP server stopped');
