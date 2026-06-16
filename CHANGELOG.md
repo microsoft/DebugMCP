@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [1.2.0] - 2026-06-04
 
 ### Added
-- **`/debug` Agent Skill** — bundled companion skill at `skills/debug/` that encodes the systematic debugging workflow for AI agents. The skill is automatically copied into each configured harness's personal skills directory (e.g. `~/.copilot/skills/debug/`) when DebugMCP is registered, and can be invoked with `/debug` in supporting agents.
+- **`/really-debug` Agent Skill** — bundled companion skill at `skills/really-debug/` that encodes the systematic debugging workflow for AI agents. The skill is automatically copied into each configured harness's personal skills directory (e.g. `~/.copilot/skills/really-debug/`) when DebugMCP is registered, and can be invoked with `/really-debug` in supporting agents. (Named `really-debug` rather than `debug` to avoid shadowing built-in `/debug` commands in some harnesses such as GitHub Copilot Chat.)
 - **Robust test debugging via the VS Code Testing API** — `start_debugging` with a `testName` now discovers and launches the target test through the VS Code Testing API, producing reliable breakpoint hits across pytest, Jest/Vitest, Java, .NET, Go, and other Testing-API-integrated runners.
 
 ## [1.0.8] - 2025-03-14

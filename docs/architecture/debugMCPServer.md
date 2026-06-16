@@ -39,7 +39,7 @@ AI Agent (MCP Client)
 
 `DebugMCPServer` exposes **tools only**. Procedural workflow guidance (when to debug,
 how to structure a root-cause investigation, language-specific quirks) lives in the
-companion Agent Skill at `skills/debug/SKILL.md`, not in tool descriptions or MCP
+companion Agent Skill at `skills/really-debug/SKILL.md`, not in tool descriptions or MCP
 resources. This separation matches modern agent ecosystems where MCP servers provide
 *capabilities* and skills provide *procedural knowledge* an agent loads as context.
 
@@ -58,7 +58,7 @@ Each request creates a new stateless `StreamableHTTPServerTransport` instance th
 - Class definition: `src/debugMCPServer.ts`
 - Tool registration: `setupTools()` method (uses `McpServer.registerTool()`)
 - Server startup: `start()` method (creates express app with `/mcp` route)
-- Agent Skill (companion, not part of the MCP surface): `skills/debug/SKILL.md`
+- Agent Skill (companion, not part of the MCP surface): `skills/really-debug/SKILL.md`
 
 ## Exposed Tools
 
