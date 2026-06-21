@@ -468,38 +468,75 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * Wait for debugger state to change from the initial state using exponential backoff
+     * Wait for the debugger to reach a new stopped frame (or end the session)
+     * after a step/continue, driven by VS Code debug events.
+     *
+     * The previous implementation polled `getCurrentDebugState` on a fixed ~1s
+     * interval: it checked once immediately (almost always too early — the DAP
+     * `stopped` event hasn't landed yet), then blind-slept ~1s before looking
+     * again. That cost ~1s per step/continue even though the operation itself
+     * completes in tens of milliseconds. There is no early-wakeup — a state
+     * change 10ms into the sleep is ignored for the rest of the second.
+     *
+     * This version subscribes to the same events the start path already uses
+     * (`onDidChangeActiveStackItem` for a new stopped frame, plus session
+     * termination) so it reacts the instant the step lands. A fast-path check
+     * covers the case where the step already completed before we got here, and
+     * a timeout bounds the no-event/never-stops case.
      */
     private async waitForStateChange(beforeState: DebugState): Promise<DebugState> {
-        const baseDelay = 1000; // Start with 1 second
-        const maxDelay = 1000; // Cap at 1 second
-        const startTime = Date.now();
-        let attempt = 0;
-                
-        while (Date.now() - startTime < this.timeoutInSeconds * 1000) {
-            const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-            
-            if (this.hasStateChanged(beforeState, currentState)) {
-                return currentState;
-            }
-            
-            // If session ended, return immediately
-            if (!currentState.sessionActive) {
-                return currentState;
-            }
-            
-            logger.info(`[Attempt ${attempt + 1}] Waiting for debugger state to change...`);
+        const timeoutMs = this.timeoutInSeconds * 1000;
+        const subscriptions: vscode.Disposable[] = [];
 
-            // Calculate delay using exponential backoff with jitter (same as waitForActiveDebugSession)
-            const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-            const jitteredDelay = delay + Math.random() * 200; // Add up to 200ms jitter
+        try {
+            await new Promise<void>(resolve => {
+                let settled = false;
+                const settle = () => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve();
+                };
 
-            await new Promise(resolve => setTimeout(resolve, jitteredDelay));
-            attempt++;
+                const timer = setTimeout(() => {
+                    logger.info('State change detection timed out, returning current state');
+                    settle();
+                }, timeoutMs);
+
+                // Register listeners BEFORE the fast-path check so a stop that
+                // lands during that async check can't slip through unobserved.
+                subscriptions.push(
+                    vscode.debug.onDidChangeActiveStackItem(stackItem => {
+                        // A newly focused stack frame is the signal that the
+                        // step/continue has landed at its next stop.
+                        if (stackItem && 'frameId' in stackItem) {
+                            settle();
+                        }
+                    })
+                );
+                subscriptions.push(
+                    vscode.debug.onDidTerminateDebugSession(() => {
+                        // continue/step that runs the program to completion.
+                        if (!vscode.debug.activeDebugSession) {
+                            settle();
+                        }
+                    })
+                );
+
+                // Fast path: the step/continue may already have landed by the
+                // time we subscribed (e.g. a trivial single-line step).
+                void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
+                    if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive) {
+                        settle();
+                    }
+                });
+            });
+        } finally {
+            subscriptions.forEach(d => d.dispose());
         }
-        
-        // If we timeout, return the current state (might be unchanged)
-        logger.info('State change detection timed out, returning current state');
+
         return await this.executor.getCurrentDebugState(this.numNextLines);
     }
 
