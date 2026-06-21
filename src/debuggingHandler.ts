@@ -11,6 +11,7 @@ import { logger } from './utils/logger';
  */
 export interface IDebuggingHandler {
     handleStartDebugging(args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }): Promise<string>;
+    handleStartDebuggingWithConfig(args: { configuration: vscode.DebugConfiguration; workingDirectory: string }): Promise<string>;
     handleStopDebugging(): Promise<string>;
     handleStepOver(): Promise<string>;
     handleStepInto(): Promise<string>;
@@ -119,6 +120,81 @@ export class DebuggingHandler implements IDebuggingHandler {
             }
         } catch (error) {
             throw new Error(`Error starting debug session: ${error}`);
+        }
+    }
+
+    /**
+     * Start a debugging session from a caller-supplied inline DebugConfiguration.
+     *
+     * This is the language-agnostic launcher: it forwards the raw config straight
+     * to vscode.debug.startDebugging() without injecting any runtime/toolchain
+     * opinions. The CALLER owns the specialization — e.g. runtimeExecutable:"tsx"
+     * for a .ts file, debugpy fields for Python, "request":"attach"+port for a
+     * --inspect-brk process, etc. This keeps the extension a thin shim while still
+     * supporting arbitrary programs (and languages) without a launch.json entry.
+     */
+    public async handleStartDebuggingWithConfig(args: {
+        configuration: vscode.DebugConfiguration;
+        workingDirectory: string;
+    }): Promise<string> {
+        const { configuration, workingDirectory } = args;
+        try {
+            this.validateConfiguration(configuration);
+            const label = configuration.name || configuration.program || configuration.type;
+            const configDescription = `inline configuration '${label}'`;
+            logger.info(
+                `handleStartDebuggingWithConfig: type=${configuration.type} ` +
+                `request=${configuration.request} program=${configuration.program ?? '<none>'} cwd=${workingDirectory}`
+            );
+
+            // Subscribe to readiness BEFORE triggering the launch (see handleStartDebugging).
+            const readyPromise = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
+
+            const started = await this.executor.startDebugging(workingDirectory, configuration);
+            if (!started) {
+                throw new Error(
+                    'Failed to start debug session. Make sure the appropriate language extension is ' +
+                    'installed and the configuration is valid.'
+                );
+            }
+
+            const readyState = await readyPromise;
+            logger.info(`handleStartDebuggingWithConfig: readyState=${readyState}, fetching current state…`);
+            const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+
+            switch (readyState) {
+                case 'stopped':
+                    return `Debug session stopped at breakpoint using ${configDescription}. Current state: ${currentState.toString()}`;
+                case 'terminated':
+                    return `Debug session ran to completion without stopping (no breakpoint hit) using ${configDescription}. Final state: ${currentState.toString()}`;
+                case 'no-session':
+                    throw new Error('Debug session failed to start within the timeout period. Make sure the appropriate language extension is installed and any required build step succeeded.');
+                case 'timeout':
+                    return `Debug session is running but did not stop or terminate within the timeout using ${configDescription}. Current state: ${currentState.toString()}`;
+            }
+        } catch (error) {
+            throw new Error(`Error starting debug session: ${error}`);
+        }
+    }
+
+    /**
+     * Minimal validation for an inline DebugConfiguration. We deliberately do NOT
+     * validate adapter-specific fields — that is the caller's responsibility — but
+     * VS Code requires at least a `type`, a `request`, and a `name`.
+     */
+    private validateConfiguration(config: vscode.DebugConfiguration): void {
+        if (!config || typeof config !== 'object') {
+            throw new Error('configuration must be an object (a VS Code DebugConfiguration).');
+        }
+        if (typeof config.type !== 'string' || config.type.trim() === '') {
+            throw new Error("configuration.type is required (e.g. 'node', 'python', 'go', 'coreclr').");
+        }
+        if (config.request !== 'launch' && config.request !== 'attach') {
+            throw new Error("configuration.request must be 'launch' or 'attach'.");
+        }
+        if (typeof config.name !== 'string' || config.name.trim() === '') {
+            // VS Code requires a name; inject a sensible default rather than failing.
+            config.name = 'DebugMCP Inline';
         }
     }
 
