@@ -169,4 +169,128 @@ suite('DebugMCPServer security', () => {
             }
         });
     });
+
+    // Stateful Streamable-HTTP session lifecycle. Regression guard for the bug
+    // where the transport ran stateless and GET /mcp returned 404, so clients
+    // (Cursor) could never open the server->client SSE stream and tombstoned the
+    // connection as "errored". Here we drive the real handshake: initialize over
+    // POST mints a session id, and GET /mcp with that id must return a live
+    // text/event-stream.
+    suite('Streamable-HTTP session lifecycle', () => {
+        const port = 30100;
+        let server: DebugMCPServer;
+
+        suiteSetup(async () => {
+            server = new DebugMCPServer(port, 60);
+            await server.initialize();
+            await server.start();
+        });
+
+        suiteTeardown(async () => {
+            await server.stop();
+        });
+
+        // POST an `initialize` request and resolve with the response status plus
+        // the mcp-session-id header the server assigns to the new session.
+        function postInitialize(): Promise<{ status: number; sessionId?: string }> {
+            const body = JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'initialize',
+                params: {
+                    protocolVersion: '2025-06-18',
+                    capabilities: {},
+                    clientInfo: { name: 'lifecycle-test', version: '0.0.0' }
+                }
+            });
+            const opts: http.RequestOptions = {
+                host: '127.0.0.1',
+                port,
+                path: '/mcp',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                    'Content-Length': Buffer.byteLength(body).toString(),
+                    'Host': `127.0.0.1:${port}`
+                }
+            };
+            return new Promise((resolve, reject) => {
+                const req = http.request(opts, res => {
+                    const sessionId = res.headers['mcp-session-id'] as string | undefined;
+                    // Drain so the socket is released; we only need status + id.
+                    res.on('data', () => { /* discard */ });
+                    res.on('end', () => resolve({ status: res.statusCode || 0, sessionId }));
+                    // initialize responds on an SSE channel that may stay open; the
+                    // headers (and session id) are already available, so resolve now
+                    // and let the drain handler clean up.
+                    resolve({ status: res.statusCode || 0, sessionId });
+                });
+                req.on('error', reject);
+                req.write(body);
+                req.end();
+            });
+        }
+
+        // Open GET /mcp (the server->client SSE stream) and resolve with the
+        // status + content-type as soon as the response headers arrive, then
+        // tear down the long-lived stream.
+        function getMcp(headers: http.OutgoingHttpHeaders): Promise<{ status: number; contentType?: string }> {
+            const opts: http.RequestOptions = {
+                host: '127.0.0.1',
+                port,
+                path: '/mcp',
+                method: 'GET',
+                headers: {
+                    'Accept': 'text/event-stream',
+                    'Host': `127.0.0.1:${port}`,
+                    ...headers
+                }
+            };
+            return new Promise((resolve, reject) => {
+                const req = http.request(opts, res => {
+                    const contentType = res.headers['content-type'];
+                    resolve({ status: res.statusCode || 0, contentType });
+                    req.destroy(); // close the long-lived SSE stream
+                });
+                req.on('error', err => {
+                    // A destroy() after we resolved can surface as ECONNRESET; ignore.
+                    if ((err as NodeJS.ErrnoException).code === 'ECONNRESET') {
+                        return;
+                    }
+                    reject(err);
+                });
+                req.end();
+            });
+        }
+
+        test('initialize over POST mints an mcp-session-id', async () => {
+            const res = await postInitialize();
+            assert.strictEqual(res.status, 200, `initialize should succeed, got ${res.status}`);
+            assert.ok(res.sessionId, 'server did not return an mcp-session-id header on initialize');
+        });
+
+        test('GET /mcp with a valid session opens a text/event-stream', async () => {
+            const init = await postInitialize();
+            assert.ok(init.sessionId, 'precondition: initialize must yield a session id');
+
+            const res = await getMcp({ 'mcp-session-id': init.sessionId });
+            assert.strictEqual(res.status, 200, `GET /mcp should open the SSE stream (200), got ${res.status}`);
+            assert.match(
+                res.contentType || '',
+                /text\/event-stream/,
+                `GET /mcp must serve an SSE stream, got content-type: ${res.contentType}`
+            );
+        });
+
+        test('GET /mcp without a session id is rejected (400)', async () => {
+            const res = await getMcp({});
+            assert.strictEqual(res.status, 400, `GET /mcp with no session must be 400, got ${res.status}`);
+        });
+
+        test('GET /mcp with an unknown session id is rejected (400)', async () => {
+            const res = await getMcp({ 'mcp-session-id': 'does-not-exist' });
+            assert.strictEqual(res.status, 400, `GET /mcp with bogus session must be 400, got ${res.status}`);
+        });
+    });
 });
