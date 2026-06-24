@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import { z } from 'zod';
 import * as http from 'http';
+import { randomUUID } from 'node:crypto';
 import {
     DebuggingExecutor,
     ConfigurationManager,
@@ -12,6 +13,7 @@ import {
 import { logger } from './utils/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 /**
  * Main MCP server class that exposes debugging functionality as tools.
@@ -103,6 +105,10 @@ export class DebugMCPServer {
     private hosts: string[];
     private initialized: boolean = false;
     private debuggingHandler: IDebuggingHandler;
+    // Active Streamable-HTTP transports keyed by MCP session id. The transport
+    // is created on `initialize` and reused for that session's subsequent
+    // POST (requests), GET (server->client SSE stream), and DELETE (teardown).
+    private transports: Record<string, StreamableHTTPServerTransport> = {};
 
     constructor(port: number, timeoutInSeconds: number, host: string | string[] = ['127.0.0.1', '::1']) {
         // Initialize the debugging components with dependency injection
@@ -116,11 +122,12 @@ export class DebugMCPServer {
     /**
      * Initialize the MCP server factory.
      *
-     * NOTE: We no longer hold a singleton McpServer here. The stateless
-     * StreamableHTTPServerTransport requires a fresh McpServer per request
+     * NOTE: We no longer hold a singleton McpServer here. In stateful session
+     * mode each `initialize` request gets its own transport + McpServer pair
      * (calling .connect() twice on the same server throws "Already connected
-     * to a transport"). The /mcp handler builds one on demand via
-     * createMcpServer().
+     * to a transport"). The POST /mcp handler builds one per session via
+     * createMcpServer() and keeps it in `this.transports` for the session's
+     * lifetime.
      */
     async initialize() {
         if (this.initialized) {
@@ -131,7 +138,7 @@ export class DebugMCPServer {
 
     /**
      * Build a fresh McpServer with all tools registered.
-     * Called once per incoming MCP request.
+     * Called once per session, when an `initialize` request opens it.
      */
     private createMcpServer(): McpServer {
         const server = new McpServer({
@@ -383,25 +390,62 @@ export class DebugMCPServer {
             });
 
             // Streamable HTTP endpoint — handles MCP protocol messages.
-            // A fresh McpServer + transport pair is built per request because
-            // StreamableHTTPServerTransport in stateless mode (sessionIdGenerator: undefined)
-            // owns its connection; reusing a single McpServer across requests
-            // throws "Already connected to a transport" on the second call.
+            // A fresh McpServer + transport pair is built per session (on the
+            // `initialize` request) and reused for that session's subsequent
+            // requests; reusing one McpServer across sessions would throw
+            // "Already connected to a transport" on the second connect().
+            // POST /mcp — client→server JSON-RPC. An `initialize` request with no
+            // session id creates a new session (transport + McpServer pair) and is
+            // remembered by its generated session id; subsequent requests carrying
+            // that `mcp-session-id` header reuse the same transport.
+            //
+            // NOTE: We run in *stateful* (session) mode rather than stateless.
+            // Stateless mode (sessionIdGenerator: undefined) cannot serve the
+            // server→client SSE stream that clients open via GET /mcp right after
+            // initialize. Cursor's MCP client treats a failed stream open as a fatal
+            // transport error and tombstones the connection after a few attempts,
+            // leaving the server permanently flagged "errored" even though POST tool
+            // calls still work. Session mode gives GET a real stream to attach to.
             app.post('/mcp', async (req: any, res: any) => {
-                logger.info('New MCP request received');
-
-                const server = this.createMcpServer();
-                const transport = new StreamableHTTPServerTransport({
-                    sessionIdGenerator: undefined, // Stateless mode - no session management
-                });
-                res.on('close', () => {
-                    transport.close();
-                    server.close();
-                    logger.info('MCP transport closed');
-                });
-
                 try {
-                    await server.connect(transport);
+                    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+                    let transport: StreamableHTTPServerTransport;
+
+                    if (sessionId && this.transports[sessionId]) {
+                        // Reuse the transport for an established session.
+                        transport = this.transports[sessionId];
+                    } else if (!sessionId && isInitializeRequest(req.body)) {
+                        // Brand-new session: build a transport + server and register it
+                        // once the SDK assigns a session id.
+                        transport = new StreamableHTTPServerTransport({
+                            sessionIdGenerator: () => randomUUID(),
+                            onsessioninitialized: (sid: string) => {
+                                this.transports[sid] = transport;
+                                logger.info(`MCP session initialized: ${sid}`);
+                            },
+                        });
+                        transport.onclose = () => {
+                            const sid = transport.sessionId;
+                            if (sid && this.transports[sid]) {
+                                delete this.transports[sid];
+                                logger.info(`MCP session closed: ${sid}`);
+                            }
+                        };
+                        const server = this.createMcpServer();
+                        await server.connect(transport);
+                    } else {
+                        // No session id and not an initialize request — invalid.
+                        res.status(400).json({
+                            jsonrpc: '2.0',
+                            error: {
+                                code: -32000,
+                                message: 'Bad Request: no valid session ID provided'
+                            },
+                            id: null
+                        });
+                        return;
+                    }
+
                     await transport.handleRequest(req, res, req.body);
                 } catch (error) {
                     logger.error('Error while handling MCP request', error);
@@ -411,33 +455,36 @@ export class DebugMCPServer {
                             error: {
                                 code: -32603,
                                 message: 'Internal MCP server error'
-                            }
-                        });
-
-                        app.get('/mcp', async (_req: any, res: any) => {
-                            res.status(405).json({
-                                jsonrpc: '2.0',
-                                error: {
-                                    code: -32000,
-                                    message: 'Method not allowed. Use POST /mcp.'
-                                },
-                                id: null
-                            });
-                        });
-
-                        app.delete('/mcp', async (_req: any, res: any) => {
-                            res.status(405).json({
-                                jsonrpc: '2.0',
-                                error: {
-                                    code: -32000,
-                                    message: 'Method not allowed. Use POST /mcp.'
-                                },
-                                id: null
-                            });
+                            },
+                            id: null
                         });
                     }
                 }
             });
+
+            // GET /mcp opens the server→client SSE notification stream for an
+            // existing session; DELETE /mcp terminates a session. Both require a
+            // valid mcp-session-id and are delegated to that session's transport.
+            // These MUST be registered at startup (a prior bug registered them
+            // lazily inside the POST error handler, so GET /mcp returned a bare 404
+            // under normal operation and clients reported the server as errored).
+            const handleSessionRequest = async (req: any, res: any) => {
+                const sessionId = req.headers['mcp-session-id'] as string | undefined;
+                if (!sessionId || !this.transports[sessionId]) {
+                    res.status(400).json({
+                        jsonrpc: '2.0',
+                        error: {
+                            code: -32000,
+                            message: 'Bad Request: invalid or missing session ID'
+                        },
+                        id: null
+                    });
+                    return;
+                }
+                await this.transports[sessionId].handleRequest(req, res);
+            };
+            app.get('/mcp', handleSessionRequest);
+            app.delete('/mcp', handleSessionRequest);
 
             // Legacy SSE endpoint for backward compatibility
             // Redirects to the new /mcp endpoint with appropriate headers
@@ -484,6 +531,16 @@ export class DebugMCPServer {
      * Stop the MCP server
      */
     async stop() {
+        // Tear down any open MCP sessions (closes their SSE streams) first.
+        for (const sessionId of Object.keys(this.transports)) {
+            try {
+                this.transports[sessionId].close();
+            } catch (error) {
+                logger.warn(`Error closing MCP session ${sessionId}`, error);
+            }
+        }
+        this.transports = {};
+
         // Close all HTTP servers
         if (this.httpServers.length > 0) {
             await Promise.all(this.httpServers.map(server =>
