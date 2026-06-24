@@ -487,6 +487,8 @@ export class DebuggingHandler implements IDebuggingHandler {
     private async waitForStateChange(beforeState: DebugState): Promise<DebugState> {
         const timeoutMs = this.timeoutInSeconds * 1000;
         const subscriptions: vscode.Disposable[] = [];
+        const operatingSession = this.executor.getActiveSession();
+        let operatingSessionTerminated = false;
 
         try {
             await new Promise<void>(resolve => {
@@ -517,9 +519,12 @@ export class DebuggingHandler implements IDebuggingHandler {
                     })
                 );
                 subscriptions.push(
-                    vscode.debug.onDidTerminateDebugSession(() => {
+                    vscode.debug.onDidTerminateDebugSession(session => {
                         // continue/step that runs the program to completion.
-                        if (!vscode.debug.activeDebugSession) {
+                        if (operatingSession && session.id === operatingSession.id) {
+                            operatingSessionTerminated = true;
+                            settle();
+                        } else if (!vscode.debug.activeDebugSession) {
                             settle();
                         }
                     })
@@ -537,7 +542,14 @@ export class DebuggingHandler implements IDebuggingHandler {
             subscriptions.forEach(d => d.dispose());
         }
 
-        return await this.executor.getCurrentDebugState(this.numNextLines);
+        const afterState = await this.executor.getCurrentDebugState(this.numNextLines);
+        // The operating session ended (program ran to completion). A lingering
+        // parent session (e.g. the JS debug terminal) can leave a different
+        // session reported as active, so reflect termination explicitly here.
+        if (operatingSessionTerminated) {
+            afterState.sessionActive = false;
+        }
+        return afterState;
     }
 
     /**
