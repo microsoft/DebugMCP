@@ -20,7 +20,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
  *
  * Tools only. Procedural workflow guidance (when to debug, how to perform
  * root-cause analysis, language-specific quirks) lives in the companion
- * Agent Skill at `skills/really-debug/` — the MCP surface itself only describes
+ * Agent Skill at `skills/debug-live/` — the MCP surface itself only describes
  * what each tool does, not how to use them together.
  */
 /**
@@ -155,7 +155,7 @@ export class DebugMCPServer {
      * Tool descriptions are intentionally terse and behavioral. Procedural
      * guidance (when to use which tool, how to perform root-cause analysis,
      * language-specific quirks) lives in the companion Agent Skill at
-     * `skills/really-debug/SKILL.md`.
+     * `skills/debug-live/SKILL.md`.
      */
     private setupTools(server: McpServer) {
         // Start debugging tool
@@ -231,12 +231,13 @@ export class DebugMCPServer {
 
         // Add breakpoint tool
         server.registerTool('add_breakpoint', {
-            description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. Breakpoints let you inspect variables and control flow at exact moments.',
+            description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. Breakpoints let you inspect variables and control flow at exact moments. Provide an optional condition to create a conditional breakpoint that only pauses when the expression evaluates to true (e.g. "i == 5" or "user.id === null").',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
                 lineContent: z.string().describe('Line content'),
+                condition: z.string().optional().describe('Optional condition expression. When provided, execution only pauses if this expression evaluates to true at the breakpoint location.'),
             },
-        }, async (args: { fileFullPath: string; lineContent: string }) => {
+        }, async (args: { fileFullPath: string; lineContent: string; condition?: string }) => {
             const result = await this.debuggingHandler.handleAddBreakpoint(args);
             return { content: [{ type: 'text' as const, text: result }] };
         });

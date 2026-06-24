@@ -4,6 +4,17 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-06-23
+
+### Added
+- **Conditional breakpoints** — `add_breakpoint` now accepts an optional `condition` expression so execution only pauses when the condition evaluates to true (e.g. `i == 5`, `user.id === null`). Conditions are surfaced in `list_breakpoints` and the debug state.
+
+### Changed
+- **Renamed the companion Agent Skill from `really-debug` to `debug-live`.** It now installs at `skills/debug-live/` (e.g. `~/.copilot/skills/debug-live/`) and is invoked with `/debug-live`. Previous `really-debug` (and `debug`) installs are cleaned up automatically on registration.
+
+### Fixed
+- **`continue`/step no longer hangs when the program runs to completion.** Detection now settles on termination of the specific session being debugged (by identity) instead of waiting for the global active session to clear, which previously hung until the timeout when a parent session (e.g. the JS debug terminal) outlived the program.
+
 ## [1.2.0] - 2026-06-04
 
 ### Added

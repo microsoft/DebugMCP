@@ -17,7 +17,7 @@ export interface IDebuggingHandler {
     handleStepOut(): Promise<string>;
     handleContinue(): Promise<string>;
     handleRestart(): Promise<string>;
-    handleAddBreakpoint(args: { fileFullPath: string; lineContent: string }): Promise<string>;
+    handleAddBreakpoint(args: { fileFullPath: string; lineContent: string; condition?: string }): Promise<string>;
     handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
     handleClearAllBreakpoints(): Promise<string>;
     handleListBreakpoints(): Promise<string>;
@@ -271,10 +271,11 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * Add a breakpoint at specified location
+     * Add a breakpoint at specified location. An optional condition makes it a
+     * conditional breakpoint that only pauses when the expression is true.
      */
-    public async handleAddBreakpoint(args: { fileFullPath: string; lineContent: string }): Promise<string> {
-        const { fileFullPath, lineContent } = args;
+    public async handleAddBreakpoint(args: { fileFullPath: string; lineContent: string; condition?: string }): Promise<string> {
+        const { fileFullPath, lineContent, condition } = args;
         
         try {
             // Find the line number containing the line content
@@ -297,14 +298,15 @@ export class DebuggingHandler implements IDebuggingHandler {
             
             // Add breakpoints to all matching lines
             for (const lineNumber of matchingLineNumbers) {
-                await this.executor.addBreakpoint(uri, lineNumber);
+                await this.executor.addBreakpoint(uri, lineNumber, condition);
             }
             
+            const conditionInfo = condition ? ` (condition: ${condition})` : '';
             if (matchingLineNumbers.length === 1) {
-                return `Breakpoint added at ${fileFullPath}:${matchingLineNumbers[0]}`;
+                return `Breakpoint added at ${fileFullPath}:${matchingLineNumbers[0]}${conditionInfo}`;
             } else {
                 const linesList = matchingLineNumbers.join(', ');
-                return `Breakpoints added at ${matchingLineNumbers.length} locations in ${fileFullPath}: lines ${linesList}`;
+                return `Breakpoints added at ${matchingLineNumbers.length} locations in ${fileFullPath}: lines ${linesList}${conditionInfo}`;
             }
         } catch (error) {
             throw new Error(`Error adding breakpoint: ${error}`);
@@ -357,7 +359,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 if (bp instanceof vscode.SourceBreakpoint) {
                     const fileName = bp.location.uri.fsPath.split(/[/\\]/).pop();
                     const line = bp.location.range.start.line + 1;
-                    breakpointList += `${index + 1}. ${fileName}:${line}\n`;
+                    const conditionInfo = bp.condition ? ` (condition: ${bp.condition})` : '';
+                    breakpointList += `${index + 1}. ${fileName}:${line}${conditionInfo}\n`;
                 } else if (bp instanceof vscode.FunctionBreakpoint) {
                     breakpointList += `${index + 1}. Function: ${bp.functionName}\n`;
                 }

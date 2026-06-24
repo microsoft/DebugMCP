@@ -31,7 +31,7 @@ export interface IDebuggingExecutor {
     stepOut(): Promise<void>;
     continue(): Promise<void>;
     restart(): Promise<void>;
-    addBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
+    addBreakpoint(uri: vscode.Uri, line: number, condition?: string): Promise<void>;
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
@@ -286,12 +286,16 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * Add a breakpoint at specified location
+     * Add a breakpoint at specified location. An optional condition makes it a
+     * conditional breakpoint that only pauses execution when the expression
+     * evaluates to true.
      */
-    public async addBreakpoint(uri: vscode.Uri, line: number): Promise<void> {
+    public async addBreakpoint(uri: vscode.Uri, line: number, condition?: string): Promise<void> {
         try {
             const breakpoint = new vscode.SourceBreakpoint(
-                new vscode.Location(uri, new vscode.Position(line - 1, 0))
+                new vscode.Location(uri, new vscode.Position(line - 1, 0)),
+                true,
+                condition
             );
             vscode.debug.addBreakpoints([breakpoint]);
         } catch (error) {
@@ -361,7 +365,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             .map(bp => {
                 const fileName = bp.location.uri.fsPath.split(/[/\\]/).pop() || 'unknown';
                 const line = bp.location.range.start.line + 1;
-                return `${fileName}:${line}`;
+                const base = `${fileName}:${line}`;
+                return bp.condition ? `${base} [when: ${bp.condition}]` : base;
             });
         state.updateBreakpoints(formattedBreakpoints);
 

@@ -1,5 +1,5 @@
 ---
-name: really-debug
+name: debug-live
 description: Drive an interactive VS Code debugger to investigate bugs, failing tests, wrong/null variable values, unexpected runtime behavior, and other "it doesn't work" reports. Use this skill whenever speculation about runtime behavior would be cheaper to *verify* by stepping through the code than to reason about. Pairs with the DebugMCP MCP server, which exposes the underlying breakpoint / step / inspect tools.
 license: MIT
 allowed-tools:
