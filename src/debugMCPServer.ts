@@ -104,19 +104,36 @@ export class DebugMCPServer {
     private port: number;
     private hosts: string[];
     private initialized: boolean = false;
-    private debuggingHandler: IDebuggingHandler;
+    // Overall backstop (ms) around every tool call so a wedged adapter or
+    // unresponsive worker can't leave an MCP request pending forever. Kept
+    // above the handler's own timeout so it only trips when truly stuck.
+    private toolBackstopMs: number;
+    // Per-MCP-session handler factory. A fresh handler per session lets each
+    // agent session keep its own routing target (repo/window) when proxying.
+    private handlerFactory: () => IDebuggingHandler;
     // Active Streamable-HTTP transports keyed by MCP session id. The transport
     // is created on `initialize` and reused for that session's subsequent
     // POST (requests), GET (server->client SSE stream), and DELETE (teardown).
     private transports: Record<string, StreamableHTTPServerTransport> = {};
 
-    constructor(port: number, timeoutInSeconds: number, host: string | string[] = ['127.0.0.1', '::1']) {
-        // Initialize the debugging components with dependency injection
-        const executor = new DebuggingExecutor();
-        const configManager = new ConfigurationManager();
-        this.debuggingHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
+    constructor(
+        port: number,
+        timeoutInSeconds: number,
+        host: string | string[] = ['127.0.0.1', '::1'],
+        handlerFactory?: () => IDebuggingHandler
+    ) {
+        if (handlerFactory) {
+            this.handlerFactory = handlerFactory;
+        } else {
+            // Default (single-window) behaviour: debug in this very window.
+            const executor = new DebuggingExecutor();
+            const configManager = new ConfigurationManager();
+            const handler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
+            this.handlerFactory = () => handler;
+        }
         this.port = port;
         this.hosts = Array.isArray(host) ? host : [host];
+        this.toolBackstopMs = timeoutInSeconds * 1000 + 30_000;
     }
 
     /**
@@ -145,8 +162,35 @@ export class DebugMCPServer {
             name: 'debugmcp',
             version: '1.0.0',
         });
-        this.setupTools(server);
+        this.setupTools(server, this.handlerFactory());
         return server;
+    }
+
+    /**
+     * Run a tool's handler with an overall backstop timeout so a wedged adapter
+     * or unresponsive worker can't hang the MCP request. Last line of defense.
+     */
+    private async runTool(
+        toolName: string,
+        run: () => Promise<string>
+    ): Promise<{ content: { type: 'text'; text: string }[] }> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const backstop = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+                reject(new Error(
+                    `Tool "${toolName}" did not complete within ${Math.round(this.toolBackstopMs / 1000)}s and was aborted. ` +
+                    'The debug adapter or target VS Code window may be unresponsive. Try stop_debugging and retry, or reload the window.'
+                ));
+            }, this.toolBackstopMs);
+        });
+        try {
+            const result = await Promise.race([run(), backstop]);
+            return { content: [{ type: 'text' as const, text: result }] };
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
     }
 
     /**
@@ -157,7 +201,7 @@ export class DebugMCPServer {
      * language-specific quirks) lives in the companion Agent Skill at
      * `skills/debug-live/SKILL.md`.
      */
-    private setupTools(server: McpServer) {
+    private setupTools(server: McpServer, debuggingHandler: IDebuggingHandler) {
         // Start debugging tool
         server.registerTool('start_debugging', {
             description: 'Start a VS Code debug session for a source file, optionally for a single test method. ' +
@@ -176,58 +220,38 @@ export class DebugMCPServer {
                     'If omitted, DebugMCP uses its default generated configuration.'
                 ),
             },
-        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) => {
-            const result = await this.debuggingHandler.handleStartDebugging(args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) =>
+            this.runTool('start_debugging', () => debuggingHandler.handleStartDebugging(args)));
 
         // Stop debugging tool
         server.registerTool('stop_debugging', {
             description: 'Stop the current debug session',
-        }, async () => {
-            const result = await this.debuggingHandler.handleStopDebugging();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('stop_debugging', () => debuggingHandler.handleStopDebugging()));
 
         // Step over tool
         server.registerTool('step_over', {
             description: 'Execute the current line of code without diving into it.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleStepOver();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('step_over', () => debuggingHandler.handleStepOver()));
 
         // Step into tool
         server.registerTool('step_into', {
             description: 'Dive into the current line of code.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleStepInto();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('step_into', () => debuggingHandler.handleStepInto()));
 
         // Step out tool
         server.registerTool('step_out', {
             description: 'Step out of the current function',
-        }, async () => {
-            const result = await this.debuggingHandler.handleStepOut();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('step_out', () => debuggingHandler.handleStepOut()));
 
         // Continue execution tool
         server.registerTool('continue_execution', {
             description: 'Resume program execution until the next breakpoint is hit or the program completes.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleContinue();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('continue_execution', () => debuggingHandler.handleContinue()));
 
         // Restart debugging tool
         server.registerTool('restart_debugging', {
             description: 'Restart the debug session from the beginning with the same configuration.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleRestart();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('restart_debugging', () => debuggingHandler.handleRestart()));
 
         // Add breakpoint tool
         server.registerTool('add_breakpoint', {
@@ -237,10 +261,8 @@ export class DebugMCPServer {
                 lineContent: z.string().describe('Line content'),
                 condition: z.string().optional().describe('Optional condition expression. When provided, execution only pauses if this expression evaluates to true at the breakpoint location.'),
             },
-        }, async (args: { fileFullPath: string; lineContent: string; condition?: string }) => {
-            const result = await this.debuggingHandler.handleAddBreakpoint(args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async (args: { fileFullPath: string; lineContent: string; condition?: string }) =>
+            this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
         // Remove breakpoint tool
         server.registerTool('remove_breakpoint', {
@@ -249,26 +271,18 @@ export class DebugMCPServer {
                 fileFullPath: z.string().describe('Full path to the file'),
                 line: z.number().describe('Line number (1-based)'),
             },
-        }, async (args: { fileFullPath: string; line: number }) => {
-            const result = await this.debuggingHandler.handleRemoveBreakpoint(args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async (args: { fileFullPath: string; line: number }) =>
+            this.runTool('remove_breakpoint', () => debuggingHandler.handleRemoveBreakpoint(args)));
 
         // Clear all breakpoints tool
         server.registerTool('clear_all_breakpoints', {
             description: 'Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleClearAllBreakpoints();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('clear_all_breakpoints', () => debuggingHandler.handleClearAllBreakpoints()));
 
         // List breakpoints tool
         server.registerTool('list_breakpoints', {
             description: 'View all currently set breakpoints across all files.',
-        }, async () => {
-            const result = await this.debuggingHandler.handleListBreakpoints();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('list_breakpoints', () => debuggingHandler.handleListBreakpoints()));
 
         // Get variables tool
         server.registerTool('get_variables_values', {
@@ -276,10 +290,8 @@ export class DebugMCPServer {
             inputSchema: {
                 scope: z.enum(['local', 'global', 'all']).optional().describe("Variable scope: 'local', 'global', or 'all'"),
             },
-        }, async (args: { scope?: 'local' | 'global' | 'all' }) => {
-            const result = await this.debuggingHandler.handleGetVariables(args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async (args: { scope?: 'local' | 'global' | 'all' }) =>
+            this.runTool('get_variables_values', () => debuggingHandler.handleGetVariables(args)));
 
         // Evaluate expression tool
         server.registerTool('evaluate_expression', {
@@ -287,10 +299,8 @@ export class DebugMCPServer {
             inputSchema: {
                 expression: z.string().describe('Expression to evaluate in the current programming language context'),
             },
-        }, async (args: { expression: string }) => {
-            const result = await this.debuggingHandler.handleEvaluateExpression(args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async (args: { expression: string }) =>
+            this.runTool('evaluate_expression', () => debuggingHandler.handleEvaluateExpression(args)));
     }
 
     /**
@@ -322,14 +332,19 @@ export class DebugMCPServer {
     }
 
     /**
-     * Start the MCP server with SSE transport over HTTP
+     * Try to become the router by binding the public port.
+     * Returns `true` if this window owns the port, `false` if another already does.
      */
-    async start(): Promise<void> {
-        // First check if server is already running
+    async start(): Promise<boolean> {
+        // If the port is already served, another window is the router.
         const isRunning = await this.isServerRunning();
         if (isRunning) {
-            logger.info(`DebugMCP server is already running on port ${this.port}`);
-            return;
+            logger.info(`DebugMCP router already owned by another window on port ${this.port}`);
+            return false;
+        }
+        if (this.httpServers.length > 0) {
+            // We already bound the port on a previous call — nothing to do.
+            return true;
         }
 
         try {
@@ -501,26 +516,35 @@ export class DebugMCPServer {
             // Binding to '127.0.0.1' alone does not cover clients that resolve `localhost` to `::1`
             // (common on IPv6-preferred systems), so we listen on both loopback families explicitly.
             for (const host of this.hosts) {
-                await new Promise<void>((resolve, reject) => {
+                const bound = await new Promise<boolean>((resolve, reject) => {
                     const server = app.listen(this.port, host, () => {
                         this.httpServers.push(server);
-                        resolve();
+                        resolve(true);
                     });
                     server.on('error', (err: NodeJS.ErrnoException) => {
-                        // EADDRINUSE on the IPv6 loopback is expected on some platforms (e.g. Linux
-                        // with net.ipv6.bindv6only=0) where the IPv4 bind already covers IPv6 via
-                        // dual-stack mapping. Treat as a soft warning instead of a hard failure.
-                        if (err.code === 'EADDRINUSE' && this.httpServers.length > 0) {
-                            logger.warn(`Skipping bind on ${host}:${this.port} (already covered by another loopback bind)`);
-                            resolve();
+                        if (err.code === 'EADDRINUSE') {
+                            // Already bound another loopback family (dual-stack) -> soft-skip.
+                            // Nothing bound yet -> another window won the port; yield to retry as worker.
+                            if (this.httpServers.length > 0) {
+                                logger.warn(`Skipping bind on ${host}:${this.port} (already covered by another loopback bind)`);
+                                resolve(true);
+                            } else {
+                                logger.info(`Another window won the DebugMCP router port ${this.port}; staying worker-only`);
+                                resolve(false);
+                            }
                             return;
                         }
                         reject(err);
                     });
                 });
+                if (!bound && this.httpServers.length === 0) {
+                    // Lost the race before binding anything — not the router.
+                    return false;
+                }
             }
 
-            logger.info(`DebugMCP server started successfully on ${this.hosts.join(', ')}:${this.port}`);
+            logger.info(`DebugMCP router started successfully on ${this.hosts.join(', ')}:${this.port}`);
+            return true;
 
         } catch (error) {
             logger.error(`Failed to start DebugMCP server`, error);
@@ -561,10 +585,11 @@ export class DebugMCPServer {
     }
 
     /**
-     * Get the debugging handler (for testing purposes)
+     * Get a debugging handler instance (for testing purposes). Builds one via
+     * the same per-session factory the MCP layer uses.
      */
     getDebuggingHandler(): IDebuggingHandler {
-        return this.debuggingHandler;
+        return this.handlerFactory();
     }
 
     /**
