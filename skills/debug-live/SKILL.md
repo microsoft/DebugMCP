@@ -14,6 +14,7 @@ allowed-tools:
   - step_into
   - step_out
   - continue_execution
+  - pause_execution
   - get_variables_values
   - evaluate_expression
 ---
@@ -57,7 +58,9 @@ If you can step through the code in a few tool calls, do that instead of specula
    program either hits a breakpoint (`stopped`) or runs to completion without pausing
    (`terminated`).
 4. **Navigate and inspect.** Use `step_over`, `step_into`, `step_out`, `continue_execution`
-   to move through code. Use `get_variables_values` to see local/global state and
+   to move through code. Use `pause_execution` to interrupt a freely-running program
+   (e.g. a busy loop or embedded target) when there is no breakpoint to stop at.
+   Use `get_variables_values` to see local/global state and
    `evaluate_expression` to test hypotheses live (call methods, read properties, run
    list comprehensions, etc.).
 5. **Find the root cause** (see framework below). Don't stop at the first wrong thing

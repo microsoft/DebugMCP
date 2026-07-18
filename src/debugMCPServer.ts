@@ -162,7 +162,7 @@ export class DebugMCPServer {
         server.registerTool('start_debugging', {
             description: 'Start a VS Code debug session for a source file, optionally for a single test method. ' +
                 'Use when investigating bugs, failing tests, wrong/null variable values, unexpected runtime behavior, ' +
-                'or any "it doesn\'t work" report where stepping through the code is cheaper than speculation.',
+                'or any "it doesn\'t work" report.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
@@ -218,6 +218,14 @@ export class DebugMCPServer {
             description: 'Resume program execution until the next breakpoint is hit or the program completes.',
         }, async () => {
             const result = await this.debuggingHandler.handleContinue();
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
+        // Pause execution tool
+        server.registerTool('pause_execution', {
+            description: 'Interrupt a running program and stop at its current location, even when no breakpoint is set. Useful for busy loops or embedded/bare-metal targets running freely — then inspect variables or step from where it stopped.',
+        }, async () => {
+            const result = await this.debuggingHandler.handlePause();
             return { content: [{ type: 'text' as const, text: result }] };
         });
 

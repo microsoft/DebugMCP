@@ -45,6 +45,7 @@ Stepping and control operations use VS Code's command system:
 - `workbench.action.debug.stepInto`
 - `workbench.action.debug.stepOut`
 - `workbench.action.debug.continue`
+- `workbench.action.debug.pause`
 - `workbench.action.debug.restart`
 
 ### DAP Custom Requests

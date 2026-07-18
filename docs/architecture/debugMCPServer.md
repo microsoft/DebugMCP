@@ -68,6 +68,7 @@ Each request creates a new stateless `StreamableHTTPServerTransport` instance th
 | `stop_debugging` | Stop current session |
 | `step_over/into/out` | Stepping commands |
 | `continue_execution` | Continue to next breakpoint |
+| `pause_execution` | Interrupt a running program (no breakpoint needed) |
 | `restart_debugging` | Restart session |
 | `add/remove_breakpoint` | Breakpoint management |
 | `clear_all_breakpoints` | Remove all breakpoints |
