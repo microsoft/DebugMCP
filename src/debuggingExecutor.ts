@@ -49,6 +49,37 @@ export interface IDebuggingExecutor {
  */
 export class DebuggingExecutor implements IDebuggingExecutor {
 
+    // Cap each DAP request so an unresponsive adapter can't hang the caller.
+    // Kept small relative to the router/tool backstops so it fails fast.
+    private static readonly DAP_REQUEST_TIMEOUT_MS = 30_000;
+
+    /**
+     * Issue a DAP request with an upper time bound, rejecting if the adapter
+     * doesn't respond in time.
+     */
+    private async dapRequest(
+        session: vscode.DebugSession,
+        command: string,
+        args: unknown
+    ): Promise<any> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+                reject(new Error(
+                    `Debug adapter did not respond to '${command}' within ` +
+                    `${Math.round(DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS / 1000)}s (it may be unresponsive).`
+                ));
+            }, DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS);
+        });
+        try {
+            return await Promise.race([session.customRequest(command, args), timeout]);
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
     /**
      * Start a debugging session
      */
@@ -400,7 +431,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         state: DebugState
     ): Promise<{ path?: string; line?: number; column?: number } | undefined> {
         try {
-            const stackTraceResponse = await session.customRequest('stackTrace', {
+            const stackTraceResponse = await this.dapRequest(session, 'stackTrace', {
                 threadId: state.threadId,
                 startFrame: 0,
                 levels: 50
@@ -485,7 +516,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
-            const response = await activeSession.customRequest('scopes', { frameId });
+            const response = await this.dapRequest(activeSession, 'scopes', { frameId });
             
             if (!response || !response.scopes || response.scopes.length === 0) {
                 return { scopes: [] };
@@ -502,7 +533,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             // Get variables for each scope
             for (const scopeItem of filteredScopes) {
                 try {
-                    const variablesResponse = await activeSession.customRequest('variables', {
+                    const variablesResponse = await this.dapRequest(activeSession, 'variables', {
                         variablesReference: scopeItem.variablesReference
                     });
                     scopeItem.variables = variablesResponse.variables || [];
@@ -528,7 +559,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
-            const response = await activeSession.customRequest('evaluate', {
+            const response = await this.dapRequest(activeSession, 'evaluate', {
                 expression: expression,
                 frameId: frameId,
                 context: 'repl'

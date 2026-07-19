@@ -59,6 +59,9 @@ For data retrieval, the executor uses DAP's custom request mechanism:
 | `variables` | Get variables within a scope |
 | `evaluate` | Evaluate expressions in REPL context |
 
+All custom requests go through `dapRequest()`, which caps each call so an
+unresponsive adapter rejects with an error instead of hanging the caller.
+
 ### Session Readiness
 
 A session is considered "ready" when:
@@ -81,6 +84,7 @@ This handles cases where the debugger is still initializing (common with Python)
 - Interface: `IDebuggingExecutor`
 - State retrieval: `getCurrentDebugState()`
 - DAP requests: `getVariables()`, `evaluateExpression()`
+- Bounded DAP calls: `dapRequest()`
 - Session readiness: `hasActiveSession()`
 
 ## Breakpoint Management
