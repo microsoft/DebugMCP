@@ -91,6 +91,8 @@ export class ControlServer {
 				return this.handler.handleStepOut();
 			case 'handleContinue':
 				return this.handler.handleContinue();
+			case 'handlePause':
+				return this.handler.handlePause();
 			case 'handleRestart':
 				return this.handler.handleRestart();
 			case 'handleAddBreakpoint':

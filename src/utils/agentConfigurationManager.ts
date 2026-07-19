@@ -189,14 +189,20 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Get the personal skills directory for a given agent. By convention we
-     * place skills alongside the agent's MCP config file (i.e. in a `skills/`
-     * sibling of the config file's parent directory). This matches harnesses
-     * like Copilot CLI (`~/.copilot/skills/`) and gives a sensible default
-     * for the other supported agents.
+     * Personal skill install targets, following the Agent Skills open standard
+     * (agentskills.io). `~/.agents/skills/` is the cross-agent location honored
+     * by skills-compatible harnesses (including VS Code agent mode and Copilot
+     * CLI); we also install into `~/.copilot/skills/` when a Copilot home exists.
+     * See issue #105.
      */
-    private getSkillsDirForAgent(agent: AgentInfo): string {
-        return path.join(path.dirname(agent.configPath), 'skills');
+    private getSkillInstallTargets(): string[] {
+        const home = os.homedir();
+        const targets = [path.join(home, '.agents', 'skills', 'debug-live')];
+        const copilotHome = process.env.COPILOT_HOME || path.join(home, '.copilot');
+        if (fs.existsSync(copilotHome)) {
+            targets.push(path.join(copilotHome, 'skills', 'debug-live'));
+        }
+        return targets;
     }
 
     /**
@@ -207,49 +213,59 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Copy the bundled debugmcp skill into the agent's personal skills
-     * directory. This is best-effort: if the bundled skill is missing or the
-     * copy fails, we log a warning but do not fail the MCP configuration.
+     * Install the bundled debugmcp skill into the standard personal skills
+     * directories (see getSkillInstallTargets). Agent-independent — the skill
+     * lives in one shared location per the Agent Skills open standard rather
+     * than being copied next to each agent's config. Returns the primary
+     * destination for UI, or null when nothing could be installed. Best-effort:
+     * failures are logged and skipped.
      */
-    private async registerDebugMCPSkill(agent: AgentInfo): Promise<string | null> {
+    private async installDebugMCPSkill(): Promise<string | null> {
         const bundledSkillPath = this.getBundledSkillPath();
 
         if (!fs.existsSync(bundledSkillPath)) {
-            console.warn(`Bundled debugmcp skill not found at ${bundledSkillPath}; skipping skill registration for ${agent.name}`);
+            console.warn(`Bundled debugmcp skill not found at ${bundledSkillPath}; skipping skill install`);
             return null;
         }
 
-        const skillsDir = this.getSkillsDirForAgent(agent);
-        const destination = path.join(skillsDir, 'debug-live');
+        let primaryDestination: string | null = null;
+        for (const destination of this.getSkillInstallTargets()) {
+            const skillsDir = path.dirname(destination);
+            try {
+                await fs.promises.mkdir(skillsDir, { recursive: true });
+                await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
+                console.log(`Installed debugmcp skill at ${destination}`);
+                await this.removeLegacySkills(skillsDir);
+                if (!primaryDestination) {
+                    primaryDestination = destination;
+                }
+            } catch (error) {
+                console.warn(`Failed to install debugmcp skill at ${destination}:`, error);
+            }
+        }
 
-        try {
-            await fs.promises.mkdir(skillsDir, { recursive: true });
-            await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
-            console.log(`Successfully registered debugmcp skill for ${agent.name} at ${destination}`);
+        return primaryDestination;
+    }
 
-            // Back-compat cleanup: earlier builds installed the skill under
-            // different directory names (`debug` in 1.2.0, later `really-debug`).
-            // Remove any stale copies so users don't end up with competing
-            // entries alongside the current `debug-live` skill.
-            const legacyDestinations = [
-                path.join(skillsDir, 'debug'),
-                path.join(skillsDir, 'really-debug'),
-            ];
-            for (const legacyDestination of legacyDestinations) {
-                if (fs.existsSync(legacyDestination)) {
-                    try {
-                        await fs.promises.rm(legacyDestination, { recursive: true, force: true });
-                        console.log(`Removed legacy debugmcp skill at ${legacyDestination}`);
-                    } catch (cleanupError) {
-                        console.warn(`Failed to remove legacy debugmcp skill at ${legacyDestination}:`, cleanupError);
-                    }
+    /**
+     * Remove stale skill copies from earlier builds (`debug` in 1.2.0, later
+     * `really-debug`) so users don't end up with competing entries alongside
+     * the current `debug-live` skill.
+     */
+    private async removeLegacySkills(skillsDir: string): Promise<void> {
+        const legacyDestinations = [
+            path.join(skillsDir, 'debug'),
+            path.join(skillsDir, 'really-debug'),
+        ];
+        for (const legacyDestination of legacyDestinations) {
+            if (fs.existsSync(legacyDestination)) {
+                try {
+                    await fs.promises.rm(legacyDestination, { recursive: true, force: true });
+                    console.log(`Removed legacy debugmcp skill at ${legacyDestination}`);
+                } catch (cleanupError) {
+                    console.warn(`Failed to remove legacy debugmcp skill at ${legacyDestination}:`, cleanupError);
                 }
             }
-
-            return destination;
-        } catch (error) {
-            console.warn(`Failed to register debugmcp skill for ${agent.name} at ${destination}:`, error);
-            return null;
         }
     }
 
@@ -379,7 +395,7 @@ export class AgentConfigurationManager {
                     // Back-compat: existing Codex users had only the MCP server registered.
                     // If DebugMCP is configured, also ensure the bundled skill is installed.
                     if (this.hasCodexDebugMCPSection(configContent)) {
-                        await this.ensureSkillRegistered(agent);
+                        await this.ensureSkillRegistered();
                     }
 
                     continue;
@@ -431,7 +447,7 @@ export class AgentConfigurationManager {
 
                 // Back-compat: existing users had only the MCP server registered.
                 // If DebugMCP is configured, also ensure the bundled skill is installed.
-                await this.ensureSkillRegistered(agent);
+                await this.ensureSkillRegistered();
             } catch (error) {
                 console.error(`Error migrating config for ${agent.name}:`, error);
                 // Continue with other agents even if one fails
@@ -446,16 +462,16 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Ensure the bundled debugmcp skill is installed in the agent's personal
-     * skills directory. Safe to call on every activation — `registerDebugMCPSkill`
-     * uses `fs.cp` with `force: true`, so it will refresh stale copies but is a
+     * Ensure the bundled debugmcp skill is installed in the standard personal
+     * skills directories. Safe to call on every activation — `installDebugMCPSkill`
+     * uses `fs.cp` with `force: true`, so it refreshes stale copies but is a
      * no-op when the destination already matches.
      */
-    private async ensureSkillRegistered(agent: AgentInfo): Promise<void> {
+    private async ensureSkillRegistered(): Promise<void> {
         try {
-            await this.registerDebugMCPSkill(agent);
+            await this.installDebugMCPSkill();
         } catch (error) {
-            console.warn(`Failed to ensure skill registration for ${agent.name}:`, error);
+            console.warn('Failed to ensure skill installation:', error);
         }
     }
 
@@ -508,7 +524,7 @@ export class AgentConfigurationManager {
                 );
 
                 console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
-                const skillPath = await this.registerDebugMCPSkill(agent);
+                const skillPath = await this.installDebugMCPSkill();
                 return { success: true, skillPath };
             }
 
@@ -542,7 +558,7 @@ export class AgentConfigurationManager {
             );
 
             console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
-            const skillPath = await this.registerDebugMCPSkill(agent);
+            const skillPath = await this.installDebugMCPSkill();
             return { success: true, skillPath };
         } catch (error) {
             console.error(`Error adding DebugMCP to ${agent.name}:`, error);

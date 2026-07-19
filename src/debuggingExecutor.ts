@@ -30,6 +30,7 @@ export interface IDebuggingExecutor {
     stepInto(): Promise<void>;
     stepOut(): Promise<void>;
     continue(): Promise<void>;
+    pause(): Promise<void>;
     restart(): Promise<void>;
     addBreakpoint(uri: vscode.Uri, line: number, condition?: string): Promise<void>;
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
@@ -302,6 +303,19 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             await vscode.commands.executeCommand('workbench.action.debug.continue');
         } catch (error) {
             throw new Error(`Failed to continue: ${error}`);
+        }
+    }
+
+    /**
+     * Execute pause command — interrupt a running program so execution stops at
+     * its current point (useful for embedded/bare-metal or busy-loop debugging
+     * where there is no breakpoint to stop at).
+     */
+    public async pause(): Promise<void> {
+        try {
+            await vscode.commands.executeCommand('workbench.action.debug.pause');
+        } catch (error) {
+            throw new Error(`Failed to pause: ${error}`);
         }
     }
 

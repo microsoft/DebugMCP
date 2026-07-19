@@ -75,6 +75,7 @@ function makeMocks(opts: MockOpts) {
         stepInto: async () => { /* noop */ },
         stepOut: async () => { /* noop */ },
         continue: async () => { /* noop */ },
+        pause: async () => { /* noop */ },
         restart: async () => { /* noop */ },
         addBreakpoint: async () => { /* noop */ },
         removeBreakpoint: async () => { /* noop */ },

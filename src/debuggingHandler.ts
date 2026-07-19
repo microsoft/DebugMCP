@@ -16,6 +16,7 @@ export interface IDebuggingHandler {
     handleStepInto(): Promise<string>;
     handleStepOut(): Promise<string>;
     handleContinue(): Promise<string>;
+    handlePause(): Promise<string>;
     handleRestart(): Promise<string>;
     handleAddBreakpoint(args: { fileFullPath: string; lineContent: string; condition?: string }): Promise<string>;
     handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
@@ -247,6 +248,31 @@ export class DebuggingHandler implements IDebuggingHandler {
             return afterState.toString();
         } catch (error) {
             throw new Error(`Error executing continue: ${error}`);
+        }
+    }
+
+    /**
+     * Pause execution — interrupt a running program so it stops at its current
+     * location. Unlike a breakpoint, this works even when no breakpoint is set
+     * (e.g. a busy loop or an embedded/bare-metal target that is running freely).
+     */
+    public async handlePause(): Promise<string> {
+        try {
+            if (!(await this.executor.hasActiveSession())) {
+                throw new Error('Debug session is not ready. Please wait for initialization to complete.');
+            }
+
+            // Get the state before executing the command
+            const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
+
+            await this.executor.pause();
+
+            // Wait for the debugger to stop (pause raises a 'stopped' event)
+            const afterState = await this.waitForStateChange(beforeState);
+
+            return afterState.toString();
+        } catch (error) {
+            throw new Error(`Error executing pause: ${error}`);
         }
     }
 

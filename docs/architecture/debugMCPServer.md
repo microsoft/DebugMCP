@@ -54,16 +54,25 @@ extension. To avoid debugging the wrong workspace when several windows are open:
 `DebugMCPServer` builds one handler **per MCP session** via a handler factory, which is
 what lets concurrent agent sessions drive debuggers in different repos simultaneously.
 
-### Tools only — no resources, no instructions
+### Tools & debug-live skill
 
-`DebugMCPServer` exposes **tools only**. Procedural workflow guidance (when to debug,
-how to structure a root-cause investigation, language-specific quirks) lives in the
-companion Agent Skill at `skills/debug-live/SKILL.md`, not in tool descriptions or MCP
-resources. This separation matches modern agent ecosystems where MCP servers provide
-*capabilities* and skills provide *procedural knowledge* an agent loads as context.
+`DebugMCPServer` exposes **tools** for debugger capabilities. Detailed procedural guidance
+(when to debug, how to structure a root-cause investigation, language-specific quirks) lives
+in the companion Agent Skill at `skills/debug-live/SKILL.md`, which `AgentConfigurationManager`
+installs into the standard personal skills directories (`~/.agents/skills/`, and
+`~/.copilot/skills/` when present) so skills-compatible harnesses load it on demand. This
+separation matches modern agent ecosystems where MCP servers provide *capabilities* and
+skills provide *procedural knowledge* an agent loads as context.
 
 Tool descriptions are intentionally terse and behavioral — they describe *what* the
 tool does, not *when* or *how* to use it in a multi-step workflow.
+
+### Ensuring the workflow is loaded
+
+The server `instructions` (passed to the `McpServer` constructor and returned to the client
+at `initialize`) and the `start_debugging` tool description both point agents at the
+`debug-live` skill for the full step-through workflow, so the pointer is visible even before
+the skill activates.
 
 ### Streamable HTTP Transport
 
@@ -96,7 +105,7 @@ error wins:
 - Per-window control server: `src/controlServer.ts`
 - Cross-window routing handler: `src/routingDebuggingHandler.ts`
 - Shared window registry: `src/utils/workspaceRegistry.ts`
-- Agent Skill (companion, not part of the MCP surface): `skills/debug-live/SKILL.md`
+- Agent Skill (procedural workflow): `skills/debug-live/SKILL.md`
 
 ## Exposed Tools
 
@@ -106,6 +115,7 @@ error wins:
 | `stop_debugging` | Stop current session |
 | `step_over/into/out` | Stepping commands |
 | `continue_execution` | Continue to next breakpoint |
+| `pause_execution` | Interrupt a running program (no breakpoint needed) |
 | `restart_debugging` | Restart session |
 | `add/remove_breakpoint` | Breakpoint management |
 | `clear_all_breakpoints` | Remove all breakpoints |
