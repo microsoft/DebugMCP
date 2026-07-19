@@ -73,11 +73,22 @@ url = "http://localhost:3001/mcp"
 
 Uses VS Code's `globalState` to track whether the onboarding popup has been shown, preventing repeated prompts on every activation.
 
+### Skill delivery — standard skills directories
+
+The `debug-live` Agent Skill is installed into the **standard personal skills directories** defined by the Agent Skills open standard (agentskills.io), rather than being copied next to each agent's config file:
+- **`~/.agents/skills/debug-live/`** — the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode and Copilot CLI. Always installed.
+- **`~/.copilot/skills/debug-live/`** — Copilot's own skills path; also installed when a Copilot home directory (`~/.copilot`, or `$COPILOT_HOME`) exists.
+
+`installDebugMCPSkill()` copies the one bundled source (`skills/debug-live/SKILL.md`) into each target with `force: true` (idempotent refresh) and removes stale legacy copies (`debug`, `really-debug`). It is agent-independent — a single shared install covers every skills-compatible harness.
+
+This fixes issue #105: earlier builds copied the skill next to each agent's config (e.g. `Code/User/skills/` for VS Code Copilot), a directory no harness scans, so the skill never loaded. Installing to `~/.agents/skills/` — which VS Code agent mode does scan — makes it discoverable.
+
 ## Key Code Locations
 
 - Class definition: `src/utils/agentConfigurationManager.ts`
 - Agent definitions: `getSupportedAgents()`
 - Config writing: `addDebugMCPToAgent()`
+- Skill install: `installDebugMCPSkill()` / `getSkillInstallTargets()` / `ensureSkillRegistered()`
 - Codex TOML upsert: `upsertCodexDebugMCPConfig()`
 - Path detection: `getConfigBasePath()`
 - Popup logic: `shouldShowPopup()`, `showAgentSelectionPopup()`
@@ -90,6 +101,8 @@ Uses VS Code's `globalState` to track whether the onboarding popup has been show
 4. For each selected agent, write/update config file
 5. Show success message with option to open config file
 6. Mark popup as shown
+
+The bundled `debug-live` skill is installed into the standard skills directories (`~/.agents/skills/`, plus `~/.copilot/skills/` when present) during step 4, so every skills-compatible harness discovers it from one shared location.
 
 ## Commands
 

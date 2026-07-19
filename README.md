@@ -4,7 +4,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.0.1-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.2.1-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
@@ -17,10 +17,12 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
   <img src="assets/DebugMCP.gif" width="800">
 </p>
 
-## ✨ What's New in 2.0.0
+## ✨ What's New
 
-- **`/debug-live` Agent Skill** — DebugMCP now ships a companion [Agent Skill](./skills/debug-live/SKILL.md) that is auto-installed into each configured harness's personal skills directory (e.g. `~/.copilot/skills/debug-live/`). Invoke it with `/debug-live` in supporting agents to load the systematic debugging workflow and trigger DebugMCP tools with the right context.
-- **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` now uses the VS Code Testing API to discover and launch the test, replacing the previous best-effort path. This works reliably across language test runners that integrate with the Testing API (pytest, Jest/Vitest, Java, .NET, Go, etc.) and produces consistent breakpoint hits inside individual test cases.
+### 2.2
+- **Cross-agent `debug-live` skill install** — the systematic debugging workflow ships as an [Agent Skill](https://agentskills.io) and is now installed into the **standard skills directories** — `~/.agents/skills/` (the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode) and `~/.copilot/skills/` when present — so it's discoverable everywhere instead of being copied next to each agent's config where nothing scans it (fixes [#105](https://github.com/microsoft/DebugMCP/issues/105), where VS Code never loaded the skill). The server also advertises MCP `instructions` and the `start_debugging` tool points at the skill for the full workflow.
+- **Pause running programs** — new `pause_execution` tool interrupts a freely-running program and stops at its current location, even with no breakpoint set (great for busy loops and embedded/bare-metal targets), so you can then inspect state or step from there.
+- **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` uses the VS Code Testing API to discover and launch the test, producing consistent breakpoint hits inside individual test cases across language test runners (pytest, Jest/Vitest, Java, .NET, Go, etc.).
 
 ## 🚀 Quick Install
 
@@ -56,6 +58,7 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **step_into** | Step into function calls | None |
 | **step_out** | Step out of the current function | None |
 | **continue_execution** | Continue until next breakpoint | None |
+| **pause_execution** | Interrupt a freely-running program and stop at its current location (no breakpoint needed) | None |
 | **restart_debugging** | Restart the current debug session | None |
 | **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`lineContent` (required)<br>`condition` (optional) |
 | **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
@@ -64,11 +67,13 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **get_variables_values** | Get variables and their values at current execution point | `scope` (optional: 'local', 'global', 'all') |
 | **evaluate_expression** | Evaluate an expression in debug context | `expression` (required) |
 
-> **Note:** The MCP server intentionally exposes **tools only** — no procedural
-> instructions, no documentation resources. Workflow guidance (when to debug, how to
-> structure a root-cause investigation, language-specific quirks) lives in the companion
-> [DebugMCP Agent Skill](./skills/debug-live/SKILL.md) so it can be loaded into an
-> agent's prompt context independently of the MCP capability surface.
+> **Note:** The MCP server exposes **tools** for debugger actions, while the procedural
+> workflow guidance (when to debug, how to structure a root-cause investigation,
+> language-specific quirks) lives in the companion [Agent Skill](./skills/debug-live/SKILL.md).
+> Tool descriptions stay terse and behavioral; the extension installs the `debug-live` skill
+> into the standard skills directories (`~/.agents/skills/`, plus `~/.copilot/skills/` when
+> present) so skills-compatible harnesses load the full workflow on demand. The server also
+> advertises MCP `instructions` pointing agents at it before debugging.
 
 ### 🎯 Debugging Best Practices
 

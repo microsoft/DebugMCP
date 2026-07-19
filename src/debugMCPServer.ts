@@ -144,6 +144,14 @@ export class DebugMCPServer {
         const server = new McpServer({
             name: 'debugmcp',
             version: '1.0.0',
+        }, {
+            // Surfaced to clients at `initialize`. Points agents at the
+            // `debug-live` Agent Skill, which the extension installs into the
+            // standard skills directories for harnesses that load skills.
+            instructions: 'These tools drive the VS Code debugger to investigate bugs, failing tests, ' +
+                'wrong/null values and other "it doesn\'t work" reports by stepping through code. ' +
+                'The companion "debug-live" Agent Skill describes the full interactive workflow: ' +
+                'when to set breakpoints, how to step and inspect state, and how to do root-cause analysis.',
         });
         this.setupTools(server);
         return server;
@@ -162,7 +170,7 @@ export class DebugMCPServer {
         server.registerTool('start_debugging', {
             description: 'Start a VS Code debug session for a source file, optionally for a single test method. ' +
                 'Use when investigating bugs, failing tests, wrong/null variable values, unexpected runtime behavior, ' +
-                'or any "it doesn\'t work" report.',
+                'or any "it doesn\'t work" report. See the "debug-live" skill for the full investigation workflow.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),

@@ -35,16 +35,25 @@ AI Agent (MCP Client)
 
 ## Key Concepts
 
-### Tools only — no resources, no instructions
+### Tools plus the debug-live skill
 
-`DebugMCPServer` exposes **tools only**. Procedural workflow guidance (when to debug,
-how to structure a root-cause investigation, language-specific quirks) lives in the
-companion Agent Skill at `skills/debug-live/SKILL.md`, not in tool descriptions or MCP
-resources. This separation matches modern agent ecosystems where MCP servers provide
-*capabilities* and skills provide *procedural knowledge* an agent loads as context.
+`DebugMCPServer` exposes **tools** for debugger capabilities. Detailed procedural guidance
+(when to debug, how to structure a root-cause investigation, language-specific quirks) lives
+in the companion Agent Skill at `skills/debug-live/SKILL.md`, which `AgentConfigurationManager`
+installs into the standard personal skills directories (`~/.agents/skills/`, and
+`~/.copilot/skills/` when present) so skills-compatible harnesses load it on demand. This
+separation matches modern agent ecosystems where MCP servers provide *capabilities* and
+skills provide *procedural knowledge* an agent loads as context.
 
 Tool descriptions are intentionally terse and behavioral — they describe *what* the
 tool does, not *when* or *how* to use it in a multi-step workflow.
+
+### Ensuring the workflow is loaded
+
+The server `instructions` (passed to the `McpServer` constructor and returned to the client
+at `initialize`) and the `start_debugging` tool description both point agents at the
+`debug-live` skill for the full step-through workflow, so the pointer is visible even before
+the skill activates.
 
 ### Streamable HTTP Transport
 
@@ -58,7 +67,7 @@ Each request creates a new stateless `StreamableHTTPServerTransport` instance th
 - Class definition: `src/debugMCPServer.ts`
 - Tool registration: `setupTools()` method (uses `McpServer.registerTool()`)
 - Server startup: `start()` method (creates express app with `/mcp` route)
-- Agent Skill (companion, not part of the MCP surface): `skills/debug-live/SKILL.md`
+- Agent Skill (procedural workflow): `skills/debug-live/SKILL.md`
 
 ## Exposed Tools
 

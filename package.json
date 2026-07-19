@@ -1,8 +1,8 @@
 {
   "name": "debugmcpextension",
-  "displayName": "DebugMCP",
-  "description": "Let AI agents debug your code inside VS Code — breakpoints, step-through execution, variable inspection, and expression evaluation. Automatically exposes itself as an MCP (Model Context Protocol) server for seamless integration with AI assistants.",
-  "version": "2.1.0",
+  "displayName": "DebugMCP — AI Agent Debugging for VS Code",
+  "description": "Your AI agent debugs for you — right inside VS Code. Let Copilot, Cline, Cursor, Codex & any MCP agent set breakpoints, step through code, and inspect variables live instead of guessing from logs.",
+  "version": "2.2.1",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
@@ -28,15 +28,34 @@
     "breakpoints",
     "debugger",
     "ai agent",
-    "copilot"
+    "copilot",
+    "cline",
+    "cursor",
+    "windsurf",
+    "roo code",
+    "codex",
+    "claude",
+    "autonomous debugging",
+    "agent debugging",
+    "test debugging",
+    "pytest",
+    "jest",
+    "debug adapter protocol",
+    "dap"
   ],
   "engines": {
     "vscode": "^1.104.0"
   },
   "icon": "assets/debug_mcp_icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "categories": [
     "Debuggers",
     "AI",
+    "Chat",
+    "Machine Learning",
     "Programming Languages"
   ],
   "extensionDependencies": [],
