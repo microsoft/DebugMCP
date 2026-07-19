@@ -24,6 +24,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handleStepInto() { return this.record('stepInto', {}); }
 	handleStepOut() { return this.record('stepOut', {}); }
 	handleContinue() { return this.record('continue', {}); }
+	handlePause() { return this.record('pause', {}); }
 	handleRestart() { return this.record('restart', {}); }
 	handleAddBreakpoint(args: any) { return this.record('addBp', args); }
 	handleRemoveBreakpoint(args: any) { return this.record('removeBp', args); }

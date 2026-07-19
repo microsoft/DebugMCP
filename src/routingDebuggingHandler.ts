@@ -190,6 +190,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		return this.forward('handleContinue', {});
 	}
 
+	public handlePause(): Promise<string> {
+		return this.forward('handlePause', {});
+	}
+
 	public handleRestart(): Promise<string> {
 		return this.forward('handleRestart', {});
 	}

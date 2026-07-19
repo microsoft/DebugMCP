@@ -259,10 +259,7 @@ export class DebugMCPServer {
         // Pause execution tool
         server.registerTool('pause_execution', {
             description: 'Interrupt a running program and stop at its current location, even when no breakpoint is set. Useful for busy loops or embedded/bare-metal targets running freely — then inspect variables or step from where it stopped.',
-        }, async () => {
-            const result = await this.debuggingHandler.handlePause();
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        }, async () => this.runTool('pause_execution', () => debuggingHandler.handlePause()));
 
         // Restart debugging tool
         server.registerTool('restart_debugging', {
