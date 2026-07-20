@@ -271,10 +271,10 @@ export class DebugMCPServer {
             description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. Breakpoints let you inspect variables and control flow at exact moments. Provide an optional condition to create a conditional breakpoint that only pauses when the expression evaluates to true (e.g. "i == 5" or "user.id === null").',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
-                lineContent: z.string().describe('Line content'),
+                line: z.number().int().describe('Line number (1-based) where the breakpoint should be set'),
                 condition: z.string().optional().describe('Optional condition expression. When provided, execution only pauses if this expression evaluates to true at the breakpoint location.'),
             },
-        }, async (args: { fileFullPath: string; lineContent: string; condition?: string }) =>
+        }, async (args: { fileFullPath: string; line: number; condition?: string }) =>
             this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
         // Remove breakpoint tool

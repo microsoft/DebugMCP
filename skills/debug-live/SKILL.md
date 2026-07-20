@@ -46,9 +46,8 @@ If you can step through the code in a few tool calls, do that instead of specula
 
 ## Core workflow
 
-1. **Set a starting breakpoint.** Use `add_breakpoint` with the file path and the exact
-   line content you want to pause on (line content matching is more robust than line
-   numbers — it survives small edits). Place it at the earliest point that's still
+1. **Set a starting breakpoint.** Use `add_breakpoint` with the file path and the 1-based
+   line number you want to pause on. Place it at the earliest point that's still
    relevant to the suspected issue.
 2. **Optionally add strategic breakpoints.** Decision points, error-handling branches,
    data boundaries (where input enters, where output is produced).
@@ -168,8 +167,8 @@ Before ending the debug session, confirm you can answer:
 
 - **Start broad, then narrow.** Begin at the entry point of the suspect function. As
   you isolate the issue, add tighter breakpoints around the problematic region.
-- **Match line content, not numbers.** `add_breakpoint` takes the exact line text so
-  breakpoints survive small edits and refactors.
+- **Use line numbers.** `add_breakpoint` takes a 1-based `line`; re-check the line after
+  edits since numbers shift when code changes.
 - **Don't overuse breakpoints.** A handful of well-placed pauses beats dozens of noisy
   ones. After each session, `clear_all_breakpoints` to start fresh.
 - **For test debugging,** pass `testName` to `start_debugging`. The server routes through
@@ -182,7 +181,7 @@ Before ending the debug session, confirm you can answer:
 
 ### Investigating a bug in `calculate.py`
 ```text
-add_breakpoint  fileFullPath=/repo/src/calculate.py  lineContent="result = parse(raw)"
+add_breakpoint  fileFullPath=/repo/src/calculate.py  line=42
 start_debugging fileFullPath=/repo/src/calculate.py  workingDirectory=/repo
 # session pauses on the breakpoint
 get_variables_values scope=local
@@ -194,7 +193,7 @@ clear_all_breakpoints
 
 ### Debugging a single xUnit test in C#
 ```text
-add_breakpoint  fileFullPath=C:\Repo\Calculator.Tests\CalculatorTests.cs  lineContent="Assert.Equal(5, _calc.Add(2, 3));"
+add_breakpoint  fileFullPath=C:\Repo\Calculator.Tests\CalculatorTests.cs  line=18
 start_debugging fileFullPath=C:\Repo\Calculator.Tests\CalculatorTests.cs  workingDirectory=C:\Repo  testName=Add_ReturnsSum
 # pauses inside the test
 step_into

@@ -33,7 +33,7 @@ DebugMCP provides enhanced support for debugging C# applications using the C# De
 3. Set appropriate working directories
 
 ### Breakpoint Management
-1. Use line content matching for reliable breakpoint placement
+1. Use the 1-based line number for reliable breakpoint placement
 2. Clear breakpoints when stopping debug sessions
 3. Verify breakpoints are hit in the expected files
 

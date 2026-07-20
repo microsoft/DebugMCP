@@ -115,7 +115,7 @@ suite('Multi-window routing', () => {
 		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
 		const result = await routing.handleAddBreakpoint({
 			fileFullPath: path.join(repoA, 'src', 'y.py'),
-			lineContent: 'return 1'
+			line: 1
 		});
 
 		assert.strictEqual(result, 'A:addBp');

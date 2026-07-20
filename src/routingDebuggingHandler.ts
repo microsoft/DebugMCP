@@ -198,7 +198,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		return this.forward('handleRestart', {});
 	}
 
-	public handleAddBreakpoint(args: { fileFullPath: string; lineContent: string; condition?: string }): Promise<string> {
+	public handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string> {
 		return this.forward('handleAddBreakpoint', args, args.fileFullPath);
 	}
 
