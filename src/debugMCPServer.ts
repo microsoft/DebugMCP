@@ -11,6 +11,7 @@ import {
     IDebuggingHandler
 } from '.';
 import { logger } from './utils/logger';
+import { withTimeout } from './utils/withTimeout';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -182,23 +183,15 @@ export class DebugMCPServer {
         toolName: string,
         run: () => Promise<string>
     ): Promise<{ content: { type: 'text'; text: string }[] }> {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const backstop = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-                reject(new Error(
-                    `Tool "${toolName}" did not complete within ${Math.round(this.toolBackstopMs / 1000)}s and was aborted. ` +
-                    'The debug adapter or target VS Code window may be unresponsive. Try stop_debugging and retry, or reload the window.'
-                ));
-            }, this.toolBackstopMs);
-        });
-        try {
-            const result = await Promise.race([run(), backstop]);
-            return { content: [{ type: 'text' as const, text: result }] };
-        } finally {
-            if (timer) {
-                clearTimeout(timer);
-            }
-        }
+        const result = await withTimeout(
+            run(),
+            this.toolBackstopMs,
+            () => new Error(
+                `Tool "${toolName}" did not complete within ${Math.round(this.toolBackstopMs / 1000)}s and was aborted. ` +
+                'The debug adapter or target VS Code window may be unresponsive. Try stop_debugging and retry, or reload the window.'
+            )
+        );
+        return { content: [{ type: 'text' as const, text: result }] };
     }
 
     /**

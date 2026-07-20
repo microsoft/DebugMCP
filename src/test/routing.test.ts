@@ -2,6 +2,7 @@
 
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { ControlServer } from '../controlServer';
@@ -37,6 +38,7 @@ class RecordingHandler implements IDebuggingHandler {
 suite('Multi-window routing', () => {
 	let dir: string;
 	const servers: ControlServer[] = [];
+	const deadServers: http.Server[] = [];
 
 	setup(() => {
 		dir = fs.mkdtempSync(path.join(os.tmpdir(), 'debugmcp-routing-test-'));
@@ -44,6 +46,7 @@ suite('Multi-window routing', () => {
 
 	teardown(async () => {
 		await Promise.all(servers.splice(0).map(s => s.stop()));
+		await Promise.all(deadServers.splice(0).map(s => new Promise<void>(resolve => s.close(() => resolve()))));
 		fs.rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -143,6 +146,49 @@ suite('Multi-window routing', () => {
 		await assert.rejects(() => routing.handleStepOver(), /no active debug target/i);
 	});
 
+	/**
+	 * Register a window whose control server accepts connections but never
+	 * responds, to simulate a hung/unresponsive VS Code window.
+	 */
+	async function startDeadWindow(fileName: string, workspaceFolders: string[]): Promise<void> {
+		const server = http.createServer(() => { /* accept, never respond */ });
+		deadServers.push(server);
+		const port: number = await new Promise(resolve => {
+			server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port));
+		});
+		fs.writeFileSync(
+			path.join(dir, fileName),
+			JSON.stringify({
+				pid: process.pid,
+				controlPort: port,
+				controlToken: 'secret',
+				workspaceFolders,
+				name: fileName,
+				updatedAt: Date.now()
+			}),
+			'utf8'
+		);
+	}
+
+	test('rejects with an actionable error when the target window is unresponsive', async () => {
+		const repoA = path.join(dir, 'repoA');
+		await startDeadWindow('a.json', [repoA]);
+
+		// 200ms forward timeout so the hung round-trip fails fast in the test.
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir), 180, 200);
+		const start = Date.now();
+		await assert.rejects(
+			() => routing.handleStartDebugging({
+				fileFullPath: path.join(repoA, 'm.py'),
+				workingDirectory: repoA
+			}),
+			/did not respond within[\s\S]*unresponsive/i
+		);
+		const elapsed = Date.now() - start;
+		assert.ok(elapsed >= 150, `should wait for the ~200ms forward timeout, only took ${elapsed}ms`);
+		assert.ok(elapsed < 5000, `forward timeout should fire promptly, took ${elapsed}ms`);
+	});
+
 	test('control server rejects requests with a wrong token', async () => {
 		const repoA = path.join(dir, 'repoA');
 		await startWindow('a.json', [repoA], new RecordingHandler('A'), 'right-token');
@@ -160,3 +206,4 @@ suite('Multi-window routing', () => {
 		);
 	});
 });
+

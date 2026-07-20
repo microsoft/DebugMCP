@@ -19,14 +19,16 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
 	// Bound the router->worker round-trip so a hung worker can't hang the
 	// forward forever. Kept above the worker's own timeout to avoid preempting
-	// slow-but-progressing operations.
+	// slow-but-progressing operations. `forwardTimeoutMs` can be passed
+	// explicitly (mainly for tests) to override the derived value.
 	private readonly forwardTimeoutMs: number;
 
 	constructor(
 		private readonly registry: WorkspaceRegistry,
-		timeoutInSeconds: number = 180
+		timeoutInSeconds: number = 180,
+		forwardTimeoutMs?: number
 	) {
-		this.forwardTimeoutMs = timeoutInSeconds * 1000 + 15_000;
+		this.forwardTimeoutMs = forwardTimeoutMs ?? timeoutInSeconds * 1000 + 15_000;
 	}
 
 	/**
