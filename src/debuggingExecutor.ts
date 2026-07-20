@@ -33,7 +33,7 @@ export interface IDebuggingExecutor {
     continue(): Promise<void>;
     pause(): Promise<void>;
     restart(): Promise<void>;
-    addBreakpoint(uri: vscode.Uri, line: number, condition?: string): Promise<void>;
+    addBreakpoint(uri: vscode.Uri, line: number, condition?: string, logMessage?: string): Promise<void>;
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
@@ -326,14 +326,17 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     /**
      * Add a breakpoint at specified location. An optional condition makes it a
      * conditional breakpoint that only pauses execution when the expression
-     * evaluates to true.
+     * evaluates to true. An optional logMessage makes it a logpoint that logs
+     * the message (with {expressions} interpolated) instead of pausing.
      */
-    public async addBreakpoint(uri: vscode.Uri, line: number, condition?: string): Promise<void> {
+    public async addBreakpoint(uri: vscode.Uri, line: number, condition?: string, logMessage?: string): Promise<void> {
         try {
             const breakpoint = new vscode.SourceBreakpoint(
                 new vscode.Location(uri, new vscode.Position(line - 1, 0)),
                 true,
-                condition
+                condition,
+                undefined,
+                logMessage
             );
             vscode.debug.addBreakpoints([breakpoint]);
         } catch (error) {

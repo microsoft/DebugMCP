@@ -28,6 +28,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handlePause() { return this.record('pause', {}); }
 	handleRestart() { return this.record('restart', {}); }
 	handleAddBreakpoint(args: any) { return this.record('addBp', args); }
+	handleAddLogpoint(args: any) { return this.record('addLp', args); }
 	handleRemoveBreakpoint(args: any) { return this.record('removeBp', args); }
 	handleClearAllBreakpoints() { return this.record('clearBp', {}); }
 	handleListBreakpoints() { return this.record('listBp', {}); }
@@ -122,6 +123,25 @@ suite('Multi-window routing', () => {
 		});
 
 		assert.strictEqual(result, 'A:addBp');
+		assert.strictEqual(handlerB.calls.length, 0);
+	});
+
+	test('add_logpoint routes by fileFullPath before any start_debugging', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const repoB = path.join(dir, 'repoB');
+		const handlerA = new RecordingHandler('A');
+		const handlerB = new RecordingHandler('B');
+		await startWindow('a.json', [repoA], handlerA);
+		await startWindow('b.json', [repoB], handlerB);
+
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		const result = await routing.handleAddLogpoint({
+			fileFullPath: path.join(repoA, 'src', 'y.py'),
+			line: 1,
+			logMessage: 'i={i}'
+		});
+
+		assert.strictEqual(result, 'A:addLp');
 		assert.strictEqual(handlerB.calls.length, 0);
 	});
 

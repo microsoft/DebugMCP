@@ -97,6 +97,8 @@ export class ControlServer {
 				return this.handler.handleRestart();
 			case 'handleAddBreakpoint':
 				return this.handler.handleAddBreakpoint(args);
+			case 'handleAddLogpoint':
+				return this.handler.handleAddLogpoint(args);
 			case 'handleRemoveBreakpoint':
 				return this.handler.handleRemoveBreakpoint(args);
 			case 'handleClearAllBreakpoints':

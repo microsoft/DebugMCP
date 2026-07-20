@@ -4,7 +4,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.2.3-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.2.4-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
@@ -61,6 +61,7 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **pause_execution** | Interrupt a freely-running program and stop at its current location (no breakpoint needed) | None |
 | **restart_debugging** | Restart the current debug session | None |
 | **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`condition` (optional) |
+| **add_logpoint** | Add a logpoint that logs a message (instead of pausing) when a line is reached | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`logMessage` (required, `{expr}` interpolated)<br>`condition` (optional) |
 | **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
 | **clear_all_breakpoints** | Remove all breakpoints at once | None |
 | **list_breakpoints** | List all active breakpoints | None |

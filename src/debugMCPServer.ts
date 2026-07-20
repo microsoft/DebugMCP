@@ -270,6 +270,18 @@ export class DebugMCPServer {
         }, async (args: { fileFullPath: string; line: number; condition?: string }) =>
             this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
+        // Add logpoint tool
+        server.registerTool('add_logpoint', {
+            description: 'Add a logpoint: a breakpoint that logs a message instead of pausing execution. Ideal for tracing values across many iterations or hot paths without stopping, or where a hard pause would distort timing. Embed expressions in curly braces to interpolate runtime values, e.g. "user id={user.id}, count={items.length}". Provide an optional condition to only log when it evaluates to true.',
+            inputSchema: {
+                fileFullPath: z.string().describe('Full path to the file'),
+                line: z.number().int().describe('Line number (1-based) where the logpoint should be set'),
+                logMessage: z.string().describe('Message to log when the line is reached. Wrap expressions in {curly braces} to interpolate runtime values.'),
+                condition: z.string().optional().describe('Optional condition expression. When provided, the message is only logged if this expression evaluates to true.'),
+            },
+        }, async (args: { fileFullPath: string; line: number; logMessage: string; condition?: string }) =>
+            this.runTool('add_logpoint', () => debuggingHandler.handleAddLogpoint(args)));
+
         // Remove breakpoint tool
         server.registerTool('remove_breakpoint', {
             description: 'Remove a breakpoint that is no longer needed.',
