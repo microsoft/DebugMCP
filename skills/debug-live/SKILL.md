@@ -4,6 +4,7 @@ description: Drive an interactive VS Code debugger to investigate bugs, failing 
 license: MIT
 allowed-tools:
   - add_breakpoint
+  - add_logpoint
   - remove_breakpoint
   - clear_all_breakpoints
   - list_breakpoints
@@ -169,6 +170,10 @@ Before ending the debug session, confirm you can answer:
   you isolate the issue, add tighter breakpoints around the problematic region.
 - **Use line numbers.** `add_breakpoint` takes a 1-based `line`; re-check the line after
   edits since numbers shift when code changes.
+- **Prefer logpoints for loops/hot paths.** When you want to observe how a value evolves
+  across many iterations without stopping, use `add_logpoint` with `{expression}`
+  interpolation (e.g. `iter {i}: total={total}`) instead of repeatedly continuing from a
+  breakpoint. Logpoints also avoid distorting timing-sensitive code.
 - **Don't overuse breakpoints.** A handful of well-placed pauses beats dozens of noisy
   ones. After each session, `clear_all_breakpoints` to start fresh.
 - **For test debugging,** pass `testName` to `start_debugging`. The server routes through

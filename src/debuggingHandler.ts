@@ -19,6 +19,7 @@ export interface IDebuggingHandler {
     handlePause(): Promise<string>;
     handleRestart(): Promise<string>;
     handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string>;
+    handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string>;
     handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
     handleClearAllBreakpoints(): Promise<string>;
     handleListBreakpoints(): Promise<string>;
@@ -326,6 +327,39 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * Add a logpoint: a breakpoint that logs a message (with {expressions}
+     * interpolated by the debug adapter) instead of pausing execution. An
+     * optional condition only logs when the expression is true.
+     */
+    public async handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string> {
+        const { fileFullPath, line, logMessage, condition } = args;
+
+        try {
+            if (!Number.isInteger(line) || line < 1) {
+                throw new Error(`Invalid line number: ${line}. Provide a 1-based line number.`);
+            }
+            if (!logMessage) {
+                throw new Error('A non-empty logMessage is required for a logpoint.');
+            }
+
+            // Validate the line exists so we fail clearly instead of setting an
+            // unbound logpoint past the end of the file.
+            const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fileFullPath));
+            if (line > document.lineCount) {
+                throw new Error(`Line ${line} is out of range: ${fileFullPath} has ${document.lineCount} lines.`);
+            }
+
+            const uri = vscode.Uri.file(fileFullPath);
+            await this.executor.addBreakpoint(uri, line, condition, logMessage);
+
+            const conditionInfo = condition ? ` (condition: ${condition})` : '';
+            return `Logpoint added at ${fileFullPath}:${line}${conditionInfo}`;
+        } catch (error) {
+            throw new Error(`Error adding logpoint: ${error}`);
+        }
+    }
+
+    /**
      * Remove a breakpoint from specified location
      */
     public async handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string> {
@@ -372,7 +406,9 @@ export class DebuggingHandler implements IDebuggingHandler {
                     const fileName = bp.location.uri.fsPath.split(/[/\\]/).pop();
                     const line = bp.location.range.start.line + 1;
                     const conditionInfo = bp.condition ? ` (condition: ${bp.condition})` : '';
-                    breakpointList += `${index + 1}. ${fileName}:${line}${conditionInfo}\n`;
+                    const kind = bp.logMessage ? `Logpoint` : `Breakpoint`;
+                    const logInfo = bp.logMessage ? ` (log: ${bp.logMessage})` : '';
+                    breakpointList += `${index + 1}. ${kind} ${fileName}:${line}${conditionInfo}${logInfo}\n`;
                 } else if (bp instanceof vscode.FunctionBreakpoint) {
                     breakpointList += `${index + 1}. Function: ${bp.functionName}\n`;
                 }

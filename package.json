@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP — Agentic Debugging for VS Code, Cursor & More",
   "description": "Your AI agent debugs for you — right inside VS Code, Cursor & other VS Code-based editors. Let Copilot, Cline, Cursor, Codex & any MCP agent set breakpoints, step through code, and inspect variables live instead of guessing from logs.",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
