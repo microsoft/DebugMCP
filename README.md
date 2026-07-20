@@ -60,7 +60,7 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **continue_execution** | Continue until next breakpoint | None |
 | **pause_execution** | Interrupt a freely-running program and stop at its current location (no breakpoint needed) | None |
 | **restart_debugging** | Restart the current debug session | None |
-| **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`lineContent` (required)<br>`condition` (optional) |
+| **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`condition` (optional) |
 | **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
 | **clear_all_breakpoints** | Remove all breakpoints at once | None |
 | **list_breakpoints** | List all active breakpoints | None |
@@ -371,7 +371,7 @@ Yes. DebugMCP supports `.cs` files and `.csproj` project files for C#/.NET debug
 - **Symptom**: Breakpoints are set but execution doesn't pause
 - **Solution**:
   - Ensure the correct file is being debugged
-  - Check that the breakpoint line content matches exactly
+  - Check that the breakpoint line number is correct
   - Verify the relevant language debugger extension is installed
 
 #### Configuration Not Auto-Detected

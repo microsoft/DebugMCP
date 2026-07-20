@@ -11,6 +11,7 @@ import {
     IDebuggingHandler
 } from '.';
 import { logger } from './utils/logger';
+import { withTimeout } from './utils/withTimeout';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -182,23 +183,15 @@ export class DebugMCPServer {
         toolName: string,
         run: () => Promise<string>
     ): Promise<{ content: { type: 'text'; text: string }[] }> {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const backstop = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-                reject(new Error(
-                    `Tool "${toolName}" did not complete within ${Math.round(this.toolBackstopMs / 1000)}s and was aborted. ` +
-                    'The debug adapter or target VS Code window may be unresponsive. Try stop_debugging and retry, or reload the window.'
-                ));
-            }, this.toolBackstopMs);
-        });
-        try {
-            const result = await Promise.race([run(), backstop]);
-            return { content: [{ type: 'text' as const, text: result }] };
-        } finally {
-            if (timer) {
-                clearTimeout(timer);
-            }
-        }
+        const result = await withTimeout(
+            run(),
+            this.toolBackstopMs,
+            () => new Error(
+                `Tool "${toolName}" did not complete within ${Math.round(this.toolBackstopMs / 1000)}s and was aborted. ` +
+                'The debug adapter or target VS Code window may be unresponsive. Try stop_debugging and retry, or reload the window.'
+            )
+        );
+        return { content: [{ type: 'text' as const, text: result }] };
     }
 
     /**
@@ -271,10 +264,10 @@ export class DebugMCPServer {
             description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. Breakpoints let you inspect variables and control flow at exact moments. Provide an optional condition to create a conditional breakpoint that only pauses when the expression evaluates to true (e.g. "i == 5" or "user.id === null").',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
-                lineContent: z.string().describe('Line content'),
+                line: z.number().int().describe('Line number (1-based) where the breakpoint should be set'),
                 condition: z.string().optional().describe('Optional condition expression. When provided, execution only pauses if this expression evaluates to true at the breakpoint location.'),
             },
-        }, async (args: { fileFullPath: string; lineContent: string; condition?: string }) =>
+        }, async (args: { fileFullPath: string; line: number; condition?: string }) =>
             this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
         // Remove breakpoint tool

@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
+import { withTimeout } from './utils/withTimeout';
 
 /**
  * Outcome of dispatching `testing.debugAtCursor`.
@@ -62,22 +63,14 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         command: string,
         args: unknown
     ): Promise<any> {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const timeout = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-                reject(new Error(
-                    `Debug adapter did not respond to '${command}' within ` +
-                    `${Math.round(DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS / 1000)}s (it may be unresponsive).`
-                ));
-            }, DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS);
-        });
-        try {
-            return await Promise.race([session.customRequest(command, args), timeout]);
-        } finally {
-            if (timer) {
-                clearTimeout(timer);
-            }
-        }
+        return withTimeout(
+            Promise.resolve(session.customRequest(command, args)),
+            DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS,
+            () => new Error(
+                `Debug adapter did not respond to '${command}' within ` +
+                `${Math.round(DebuggingExecutor.DAP_REQUEST_TIMEOUT_MS / 1000)}s (it may be unresponsive).`
+            )
+        );
     }
 
     /**
