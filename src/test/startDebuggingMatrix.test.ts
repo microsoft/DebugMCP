@@ -313,3 +313,145 @@ suite('handleStartDebugging regression matrix', () => {
 function escapeRegex(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+/**
+ * Coverage for handleStartDebuggingWithConfig — the language-agnostic launcher
+ * that forwards a raw inline DebugConfiguration to vscode.debug.startDebugging
+ * without injecting any toolchain opinions.
+ */
+suite('handleStartDebuggingWithConfig (inline config)', () => {
+
+    function makeCapturingMocks(opts: { readyState?: Deferred<ReadyState>; startResult?: boolean }) {
+        const state = new DebugState();
+        state.sessionActive = false;
+        let captured: string | vscode.DebugConfiguration | undefined;
+        let capturedCwd: string | undefined;
+
+        const executor: IDebuggingExecutor = {
+            startDebugging: async (cwd: string, config: string | vscode.DebugConfiguration) => {
+                captured = config;
+                capturedCwd = cwd;
+                return opts.startResult ?? true;
+            },
+            debugTestAtCursor: async () => ({ started: true, runComplete: new Promise<void>(() => { /* pending */ }) }),
+            waitForDebugSessionReady: () => opts.readyState?.promise ?? Promise.resolve('no-session' as ReadyState),
+            getCurrentDebugState: async () => state,
+            stopDebugging: async () => { /* noop */ },
+            stepOver: async () => { /* noop */ },
+            stepInto: async () => { /* noop */ },
+            stepOut: async () => { /* noop */ },
+            continue: async () => { /* noop */ },
+            restart: async () => { /* noop */ },
+            addBreakpoint: async () => { /* noop */ },
+            removeBreakpoint: async () => { /* noop */ },
+            getVariables: async () => ({}),
+            evaluateExpression: async () => ({}),
+            getBreakpoints: () => [],
+            clearAllBreakpoints: () => { /* noop */ },
+            hasActiveSession: async () => false,
+            getActiveSession: () => undefined
+        };
+
+        const configManager: IDebugConfigurationManager = {
+            getDebugConfig: async () => { throw new Error('getDebugConfig must NOT be called for inline-config launches'); },
+            detectLanguageFromFilePath: () => 'node'
+        };
+
+        return { executor, configManager, getCaptured: () => captured, getCapturedCwd: () => capturedCwd };
+    }
+
+    test('forwards the raw config verbatim and returns "stopped"', async () => {
+        const ready = deferred<ReadyState>();
+        const mocks = makeCapturingMocks({ readyState: ready, startResult: true });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+
+        const tsxConfig = {
+            type: 'node',
+            request: 'launch' as const,
+            name: 'ad-hoc tsx',
+            program: '/repo/scripts/foo.ts',
+            runtimeExecutable: 'tsx',
+            args: ['--flag', 'value'],
+            env: { FOO: 'bar' },
+            console: 'integratedTerminal'
+        };
+
+        const pending = handler.handleStartDebuggingWithConfig({
+            configuration: tsxConfig as unknown as vscode.DebugConfiguration,
+            workingDirectory: '/repo'
+        });
+        ready.resolve('stopped');
+        const result = await pending;
+
+        assert.match(result, /stopped at breakpoint/);
+        assert.match(result, /ad-hoc tsx/);
+        // The config the executor received must be exactly what we passed —
+        // no toolchain fields injected or stripped by the extension.
+        assert.deepStrictEqual(mocks.getCaptured(), tsxConfig);
+        assert.strictEqual(mocks.getCapturedCwd(), '/repo');
+    });
+
+    test('clean run returns "terminated"', async () => {
+        const ready = deferred<ReadyState>();
+        const mocks = makeCapturingMocks({ readyState: ready, startResult: true });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+
+        const pending = handler.handleStartDebuggingWithConfig({
+            configuration: { type: 'python', request: 'launch', name: 'py', program: '/repo/app.py' } as vscode.DebugConfiguration,
+            workingDirectory: '/repo'
+        });
+        ready.resolve('terminated');
+        assert.match(await pending, /ran to completion without stopping/);
+    });
+
+    test('defaults a missing name rather than failing', async () => {
+        const ready = deferred<ReadyState>();
+        const mocks = makeCapturingMocks({ readyState: ready, startResult: true });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+
+        const pending = handler.handleStartDebuggingWithConfig({
+            configuration: { type: 'node', request: 'attach', port: 9229 } as unknown as vscode.DebugConfiguration,
+            workingDirectory: '/repo'
+        });
+        ready.resolve('stopped');
+        await pending;
+        const captured = mocks.getCaptured() as vscode.DebugConfiguration;
+        assert.strictEqual(captured.name, 'DebugMCP Inline');
+    });
+
+    test('rejects when type is missing', async () => {
+        const mocks = makeCapturingMocks({ startResult: true });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+        await assert.rejects(
+            handler.handleStartDebuggingWithConfig({
+                configuration: { request: 'launch', program: '/x' } as unknown as vscode.DebugConfiguration,
+                workingDirectory: '/repo'
+            }),
+            /configuration\.type is required/
+        );
+    });
+
+    test('rejects an invalid request', async () => {
+        const mocks = makeCapturingMocks({ startResult: true });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+        await assert.rejects(
+            handler.handleStartDebuggingWithConfig({
+                configuration: { type: 'node', request: 'connect', program: '/x' } as unknown as vscode.DebugConfiguration,
+                workingDirectory: '/repo'
+            }),
+            /request must be 'launch' or 'attach'/
+        );
+    });
+
+    test('surfaces a failed launch', async () => {
+        const mocks = makeCapturingMocks({ startResult: false });
+        const handler = new DebuggingHandler(mocks.executor, mocks.configManager, 30);
+        await assert.rejects(
+            handler.handleStartDebuggingWithConfig({
+                configuration: { type: 'node', request: 'launch', name: 'x', program: '/x' } as vscode.DebugConfiguration,
+                workingDirectory: '/repo'
+            }),
+            /Failed to start debug session/
+        );
+    });
+});
