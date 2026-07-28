@@ -10,12 +10,12 @@ import { logger } from './utils/logger';
  * Interface for debugging handler operations
  */
 export interface IDebuggingHandler {
-    handleStartDebugging(args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }): Promise<string>;
+    handleStartDebugging(args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string; noWait?: boolean }): Promise<string>;
     handleStopDebugging(): Promise<string>;
     handleStepOver(): Promise<string>;
     handleStepInto(): Promise<string>;
     handleStepOut(): Promise<string>;
-    handleContinue(): Promise<string>;
+    handleContinue(args?: { noWait?: boolean }): Promise<string>;
     handlePause(): Promise<string>;
     handleRestart(): Promise<string>;
     handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string>;
@@ -51,8 +51,9 @@ export class DebuggingHandler implements IDebuggingHandler {
         workingDirectory: string;
         testName?: string;
         configurationName?: string;
+        noWait?: boolean;
     }): Promise<string> {
-        const { fileFullPath, workingDirectory, testName, configurationName } = args;
+        const { fileFullPath, workingDirectory, testName, configurationName, noWait } = args;
         const hasExplicitConfig = !!configurationName &&
             configurationName.trim() !== '' &&
             configurationName !== DebugConfigurationManager.getAutoLaunchConfigName();
@@ -90,6 +91,10 @@ export class DebuggingHandler implements IDebuggingHandler {
             }
 
             if (started) {
+                if (noWait) {
+                    return `Debug session started (noWait=true) for: ${fileFullPath} using ${configDescription}. The session is running in the background.`;
+                }
+
                 // Race the readiness signal against the test run completion. For .NET
                 // (and any runner where onDidTerminateDebugSession doesn't fire
                 // reliably for parent/child sessions), the test-run-complete signal
@@ -232,7 +237,7 @@ export class DebuggingHandler implements IDebuggingHandler {
     /**
      * Continue execution
      */
-    public async handleContinue(): Promise<string> {
+    public async handleContinue(args?: { noWait?: boolean }): Promise<string> {
         try {
             if (!(await this.executor.hasActiveSession())) {
                 throw new Error('Debug session is not ready. Please wait for initialization to complete.');
@@ -243,6 +248,10 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             await this.executor.continue();
             
+            if (args?.noWait) {
+                return "Execution continued (noWait=true). The program is running in the background.";
+            }
+
             // Wait for debugger state to change
             const afterState = await this.waitForStateChange(beforeState);
             

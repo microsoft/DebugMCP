@@ -220,8 +220,11 @@ export class DebugMCPServer {
                     'Optional debug configuration name from launch.json. ' +
                     'If omitted, DebugMCP uses its default generated configuration.'
                 ),
+                noWait: z.boolean().optional().describe(
+                    'If true, returns immediately after starting instead of waiting for a breakpoint.'
+                ),
             },
-        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) =>
+        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string; noWait?: boolean }) =>
             this.runTool('start_debugging', () => debuggingHandler.handleStartDebugging(args)));
 
         // Stop debugging tool
@@ -247,7 +250,10 @@ export class DebugMCPServer {
         // Continue execution tool
         server.registerTool('continue_execution', {
             description: 'Resume program execution until the next breakpoint is hit or the program completes.',
-        }, async () => this.runTool('continue_execution', () => debuggingHandler.handleContinue()));
+            inputSchema: {
+                noWait: z.boolean().optional().describe('If true, returns immediately instead of waiting for the next breakpoint.'),
+            },
+        }, async (args: { noWait?: boolean } = {}) => this.runTool('continue_execution', () => debuggingHandler.handleContinue(args)));
 
         // Pause execution tool
         server.registerTool('pause_execution', {
