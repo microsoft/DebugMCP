@@ -109,6 +109,8 @@ export class ControlServer {
 				return this.handler.handleGetVariables(args);
 			case 'handleEvaluateExpression':
 				return this.handler.handleEvaluateExpression(args);
+			case 'handleGetDebugState':
+				return this.handler.handleGetDebugState();
 			default:
 				return Promise.reject(new Error(`Unknown control op: ${op}`));
 		}
