@@ -25,6 +25,7 @@ export interface IDebuggingHandler {
     handleListBreakpoints(): Promise<string>;
     handleGetVariables(args: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
+    handleGetDebugState(): Promise<string>;
 }
 
 /**
@@ -514,7 +515,19 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * Get current debug state
+     * Get current debug state as string
+     */
+    public async handleGetDebugState(): Promise<string> {
+        try {
+            const state = await this.executor.getCurrentDebugState(this.numNextLines);
+            return state.toString();
+        } catch (error) {
+            throw new Error(`Error getting debug state: ${error}`);
+        }
+    }
+
+    /**
+     * Get current debug state object
      */
     public async getCurrentDebugState(): Promise<DebugState> {
         return await this.executor.getCurrentDebugState(this.numNextLines);

@@ -232,6 +232,11 @@ export class DebugMCPServer {
             description: 'Stop the current debug session',
         }, async () => this.runTool('stop_debugging', () => debuggingHandler.handleStopDebugging()));
 
+        // Get debug state tool
+        server.registerTool('get_debug_state', {
+            description: 'Get the current state of the debug session (running, paused, or inactive), including current breakpoint location and pause reason if paused.',
+        }, async () => this.runTool('get_debug_state', () => debuggingHandler.handleGetDebugState()));
+
         // Step over tool
         server.registerTool('step_over', {
             description: 'Execute the current line of code without diving into it.',

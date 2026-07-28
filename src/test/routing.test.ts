@@ -34,6 +34,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handleListBreakpoints() { return this.record('listBp', {}); }
 	handleGetVariables(args: any) { return this.record('vars', args); }
 	handleEvaluateExpression(args: any) { return this.record('eval', args); }
+	handleGetDebugState() { return this.record('getDebugState', {}); }
 }
 
 suite('Multi-window routing', () => {

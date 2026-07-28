@@ -228,4 +228,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 	public handleEvaluateExpression(args: { expression: string }): Promise<string> {
 		return this.forward('handleEvaluateExpression', args);
 	}
+
+	public handleGetDebugState(): Promise<string> {
+		return this.forward('handleGetDebugState', {});
+	}
 }
