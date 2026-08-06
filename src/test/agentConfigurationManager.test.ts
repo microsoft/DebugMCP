@@ -1,7 +1,35 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as assert from 'assert';
-import { upsertCodexDebugMCPConfig } from '../utils/agentConfigurationManager';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import {
+    upsertCodexDebugMCPConfig,
+    upsertJsonDebugMCPConfigFile
+} from '../utils/agentConfigurationManager';
+
+suite('AgentConfigurationManager JSON configuration', () => {
+    test('upsertJsonDebugMCPConfigFile should preserve an existing file if it contains malformed JSON', async () => {
+        const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'debugmcp-agent-config-'));
+        const configPath = path.join(tempDir, 'mcp.json');
+        const malformedConfig = '{\n  "servers": {\n    "other": true,\n';
+        await fs.promises.writeFile(configPath, malformedConfig, 'utf8');
+
+        try {
+            await assert.rejects(
+                upsertJsonDebugMCPConfigFile(configPath, 'servers', {
+                    type: 'streamableHttp',
+                    url: 'http://localhost:3001/mcp'
+                }),
+                SyntaxError
+            );
+            assert.strictEqual(await fs.promises.readFile(configPath, 'utf8'), malformedConfig);
+        } finally {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+        }
+    });
+});
 
 suite('AgentConfigurationManager Codex TOML configuration', () => {
     const mcpServerUrl = 'http://localhost:3001/mcp';
