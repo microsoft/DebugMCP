@@ -224,6 +224,36 @@ export class DebugMCPServer {
         }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) =>
             this.runTool('start_debugging', () => debuggingHandler.handleStartDebugging(args)));
 
+        // Start debugging from a raw inline configuration (language-agnostic).
+        server.registerTool('start_debugging_with_config', {
+            description: 'Start a VS Code debug session from a raw, caller-supplied launch.json-style configuration object — ' +
+                'no launch.json entry required. Use this to debug an ARBITRARY program/command (any language with an ' +
+                'installed debug extension) when there is no suitable existing configuration. The caller owns all ' +
+                'toolchain specifics: e.g. for a TypeScript file pass {"type":"node","request":"launch","program":"...",' +
+                '"runtimeExecutable":"tsx"}; for Python {"type":"python","request":"launch","program":"..."}; to attach ' +
+                'to a `node --inspect-brk` process {"type":"node","request":"attach","port":9229}. Pass args/env/cwd/' +
+                'console/stopOnEntry as needed; they are forwarded verbatim.',
+            inputSchema: {
+                configuration: z.object({
+                    type: z.string().describe("Debug adapter type, e.g. 'node', 'python', 'go', 'coreclr', 'lldb'."),
+                    request: z.enum(['launch', 'attach']).describe("'launch' to start a new process, 'attach' to connect to a running one."),
+                    name: z.string().optional().describe('Optional session name (defaults to "DebugMCP Inline").'),
+                    program: z.string().optional().describe('Program/entry file to run (for request="launch").'),
+                }).passthrough().describe(
+                    'A VS Code DebugConfiguration. Adapter-specific fields (runtimeExecutable, args, env, cwd, console, ' +
+                    'port, stopOnEntry, …) are passed through unchanged. The agent is responsible for runtime/toolchain ' +
+                    'choices (e.g. runtimeExecutable:"tsx" for .ts).'
+                ),
+                workingDirectory: z.string().describe('Workspace folder for the debug session.'),
+            },
+        }, async (args) => {
+            const result = await this.debuggingHandler.handleStartDebuggingWithConfig({
+                configuration: args.configuration as unknown as vscode.DebugConfiguration,
+                workingDirectory: args.workingDirectory
+            });
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
         // Stop debugging tool
         server.registerTool('stop_debugging', {
             description: 'Stop the current debug session',
