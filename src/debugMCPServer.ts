@@ -220,14 +220,22 @@ export class DebugMCPServer {
                     'Optional debug configuration name from launch.json. ' +
                     'If omitted, DebugMCP uses its default generated configuration.'
                 ),
+                noWait: z.boolean().optional().describe(
+                    'If true, returns immediately after starting instead of waiting for a breakpoint.'
+                ),
             },
-        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string }) =>
+        }, async (args: { fileFullPath: string; workingDirectory: string; testName?: string; configurationName?: string; noWait?: boolean }) =>
             this.runTool('start_debugging', () => debuggingHandler.handleStartDebugging(args)));
 
         // Stop debugging tool
         server.registerTool('stop_debugging', {
             description: 'Stop the current debug session',
         }, async () => this.runTool('stop_debugging', () => debuggingHandler.handleStopDebugging()));
+
+        // Get debug state tool
+        server.registerTool('get_debug_state', {
+            description: 'Get the current state of the debug session (running, paused, or inactive), including current breakpoint location and pause reason if paused.',
+        }, async () => this.runTool('get_debug_state', () => debuggingHandler.handleGetDebugState()));
 
         // Step over tool
         server.registerTool('step_over', {
@@ -247,7 +255,10 @@ export class DebugMCPServer {
         // Continue execution tool
         server.registerTool('continue_execution', {
             description: 'Resume program execution until the next breakpoint is hit or the program completes.',
-        }, async () => this.runTool('continue_execution', () => debuggingHandler.handleContinue()));
+            inputSchema: {
+                noWait: z.boolean().optional().describe('If true, returns immediately instead of waiting for the next breakpoint.'),
+            },
+        }, async (args: { noWait?: boolean } = {}) => this.runTool('continue_execution', () => debuggingHandler.handleContinue(args)));
 
         // Pause execution tool
         server.registerTool('pause_execution', {
