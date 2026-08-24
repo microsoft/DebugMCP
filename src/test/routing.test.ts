@@ -35,6 +35,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handleGetVariables(args: any) { return this.record('vars', args); }
 	handleListVariableNames(args?: any) { return this.record('varNames', args ?? {}); }
 	handleEvaluateExpression(args: any) { return this.record('eval', args); }
+	handleGetDebugState() { return this.record('getDebugState', {}); }
 }
 
 suite('Multi-window routing', () => {

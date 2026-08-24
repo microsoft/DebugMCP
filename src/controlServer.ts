@@ -90,7 +90,7 @@ export class ControlServer {
 			case 'handleStepOut':
 				return this.handler.handleStepOut();
 			case 'handleContinue':
-				return this.handler.handleContinue();
+				return this.handler.handleContinue(args);
 			case 'handlePause':
 				return this.handler.handlePause();
 			case 'handleRestart':
@@ -111,6 +111,8 @@ export class ControlServer {
 				return this.handler.handleListVariableNames(args);
 			case 'handleEvaluateExpression':
 				return this.handler.handleEvaluateExpression(args);
+			case 'handleGetDebugState':
+				return this.handler.handleGetDebugState();
 			default:
 				return Promise.reject(new Error(`Unknown control op: ${op}`));
 		}

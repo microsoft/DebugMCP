@@ -168,6 +168,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		workingDirectory: string;
 		testName?: string;
 		configurationName?: string;
+		noWait?: boolean;
 	}): Promise<string> {
 		return this.forward('handleStartDebugging', args, args.workingDirectory || args.fileFullPath);
 	}
@@ -188,8 +189,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		return this.forward('handleStepOut', {});
 	}
 
-	public handleContinue(): Promise<string> {
-		return this.forward('handleContinue', {});
+	public handleContinue(args?: { noWait?: boolean }): Promise<string> {
+		return this.forward('handleContinue', args || {});
 	}
 
 	public handlePause(): Promise<string> {
@@ -230,5 +231,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
 	public handleEvaluateExpression(args: { expression: string }): Promise<string> {
 		return this.forward('handleEvaluateExpression', args);
+	}
+
+	public handleGetDebugState(): Promise<string> {
+		return this.forward('handleGetDebugState', {});
 	}
 }
