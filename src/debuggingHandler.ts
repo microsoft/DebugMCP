@@ -118,6 +118,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 switch (readyState) {
                     case 'stopped':
                         return `Debug session stopped at breakpoint for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
+                    case 'attached':
+                        return `Debug session attached to the running process for: ${fileFullPath} using ${configDescription}${testInfo}. The process keeps running until a breakpoint is hit - add breakpoints, then exercise the process. Current state: ${currentState.toString()}`;
                     case 'terminated':
                         return `Debug session for ${fileFullPath} ran to completion without stopping (no breakpoint hit). Using ${configDescription}${testInfo}. Final state: ${currentState.toString()}`;
                     case 'no-session':
