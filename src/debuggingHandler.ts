@@ -254,8 +254,11 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             await this.executor.continue();
             
-            // Wait for debugger state to change
-            const afterState = await this.waitForStateChange(beforeState);
+            // Wait for the debugger to leave its current stop. Unlike a step,
+            // a continue is complete as soon as the program is running again -
+            // a server process may never stop a second time, so waiting for the
+            // next frame would burn the whole timeout on a successful continue.
+            const afterState = await this.waitForStateChange(beforeState, true);
             
             return afterState.toString();
         } catch (error) {
@@ -871,8 +874,15 @@ export class DebuggingHandler implements IDebuggingHandler {
      * termination) so it reacts the instant the step lands. A fast-path check
      * covers the case where the step already completed before we got here, and
      * a timeout bounds the no-event/never-stops case.
+     *
+     * `settleOnResume` (continue only) additionally treats "running again, no
+     * stack frame" as a terminal state. `hasStateChanged` deliberately reports
+     * paused -> running as "no change" so that a step isn't settled by the
+     * transient frameless moment mid-step; for a continue, though, that state
+     * is the successful outcome, and a process that keeps running (a server, an
+     * event loop) never produces the next frame the step path waits for.
      */
-    private async waitForStateChange(beforeState: DebugState): Promise<DebugState> {
+    private async waitForStateChange(beforeState: DebugState, settleOnResume = false): Promise<DebugState> {
         const timeoutMs = this.timeoutInSeconds * 1000;
         const subscriptions: vscode.Disposable[] = [];
         const operatingSession = this.executor.getActiveSession();
@@ -903,6 +913,14 @@ export class DebuggingHandler implements IDebuggingHandler {
                         // step/continue has landed at its next stop.
                         if (stackItem && 'frameId' in stackItem) {
                             settle();
+                        } else if (settleOnResume && !stackItem) {
+                            // Continue only: the active stack item being cleared
+                            // means the program resumed. That IS the terminal
+                            // state for a continue against a process that keeps
+                            // running (a server, an event loop) and will never
+                            // stop again on its own.
+                            logger.info('Program resumed; continue is complete');
+                            settle();
                         }
                     })
                 );
@@ -919,9 +937,11 @@ export class DebuggingHandler implements IDebuggingHandler {
                 );
 
                 // Fast path: the step/continue may already have landed by the
-                // time we subscribed (e.g. a trivial single-line step).
+                // time we subscribed (e.g. a trivial single-line step), or the
+                // program may already be running again after a continue.
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive) {
+                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasLocationInfo();
+                    if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive || resumed) {
                         settle();
                     }
                 });

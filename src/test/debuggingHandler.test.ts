@@ -205,3 +205,83 @@ suite('DebuggingHandler waitForStateChange (event-driven)', () => {
         assert.ok(elapsed < 3000, `timeout should bound the wait, took ${elapsed}ms`);
     });
 });
+
+/**
+ * Regression tests for continue against a process that resumes and keeps
+ * running (a server, an event loop) rather than stopping again.
+ *
+ * hasStateChanged deliberately reports paused -> running as "no change", so
+ * that a step isn't settled by the transient frameless moment mid-step. Before
+ * the fix, handleContinue reused those step semantics and waited for a next
+ * frame that never arrives, burning the full timeout on a successful continue.
+ */
+suite('DebuggingHandler continue on a never-stopping process', () => {
+
+    function pausedState(line: number): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        s.updateLocation('/test/file.js', 'file.js', line, 'let v = 1;', []);
+        s.updateContext(1, 1);
+        s.updateFrameName('main');
+        return s;
+    }
+
+    // Session alive, but no stack frame: the program is running.
+    function runningState(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        return s;
+    }
+
+    function makeExecutor(getState: (call: number) => DebugState): IDebuggingExecutor {
+        let call = 0;
+        return {
+            startDebugging: async () => true,
+            debugTestAtCursor: async () => ({ started: true, runComplete: new Promise<void>(() => { /* pending */ }) }),
+            stopDebugging: async () => { /* noop */ },
+            stepOver: async () => { /* noop */ },
+            stepInto: async () => { /* noop */ },
+            stepOut: async () => { /* noop */ },
+            continue: async () => { /* noop */ },
+            pause: async () => { /* noop */ },
+            restart: async () => { /* noop */ },
+            addBreakpoint: async () => { /* noop */ },
+            removeBreakpoint: async () => { /* noop */ },
+            getCurrentDebugState: async () => getState(call++),
+            getVariables: async () => ({}),
+            getVariableChildren: async () => [],
+            evaluateExpression: async () => ({}),
+            getBreakpoints: () => [],
+            clearAllBreakpoints: () => { /* noop */ },
+            hasActiveSession: async () => true,
+            getActiveSession: () => undefined,
+            waitForDebugSessionReady: async () => 'no-session'
+        };
+    }
+
+    test('continue returns promptly once the program is running again', async () => {
+        // call 0 = paused at a breakpoint; afterwards = running, no frame.
+        const executor = makeExecutor(call => (call === 0 ? pausedState(10) : runningState()));
+        // 30s timeout: without the fix this waits it out and the test fails on latency.
+        const handler = new DebuggingHandler(executor, {} as any, 30);
+
+        const started = Date.now();
+        await handler.handleContinue();
+        const elapsed = Date.now() - started;
+
+        assert.ok(elapsed < 2000, 'continue should resolve as soon as the program resumes, took ' + elapsed + 'ms');
+    });
+
+    test('step still waits for the next frame rather than settling on the resume', async () => {
+        // Same state sequence, but stepping must NOT treat "running" as arrival,
+        // otherwise a step would return a frameless state mid-step.
+        const executor = makeExecutor(call => (call === 0 ? pausedState(10) : runningState()));
+        const handler = new DebuggingHandler(executor, {} as any, 0.3);
+
+        const started = Date.now();
+        await handler.handleStepOver();
+        const elapsed = Date.now() - started;
+
+        assert.ok(elapsed >= 200, 'step should wait for its next frame, only took ' + elapsed + 'ms');
+    });
+});
