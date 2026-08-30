@@ -59,6 +59,14 @@ A state change is considered meaningful when any of these change:
 - Frame name (function/method)
 - Frame ID
 
+### Ruby test entry pause
+
+Ruby rdbg emits an initial stopped frame when the Ruby LSP Testing API starts an
+RSpec example. When project breakpoints exist and that frame is not one of them,
+the handler continues once and waits for the actual breakpoint before returning
+from `start_debugging`. Other adapters and deliberate no-breakpoint entry pauses
+are unchanged.
+
 ### Root Cause Analysis
 
 When debugging stops, the handler prompts AI agents to consider whether they found the root cause or just a symptom, encouraging deeper investigation.
@@ -82,6 +90,7 @@ content (JWT, PEM private key, `AKIA…`, `ghp_…`, `Bearer …`, `Password=…
 bypass for per-variable controls. Null-ish values are deliberately left intact so
 missing-credential bugs stay debuggable.
 `handleGetVariables` and `handleEvaluateExpression` return the explicitly requested variable or expression's own result, but any expandable descendants are rendered as names and types only. A descendant value requires evaluating that exact path separately.
+Scalar Ruby values remain scalar even when rdbg supplies a `variablesReference` for implementation metadata such as `#class`; DebugMCP returns the value and does not recursively expand that metadata. Synthetic rdbg `#class` and `%ancestors` children are omitted from aggregate expansion so user fields remain visible.
 Recursive expansion is bounded to 100 child fields total per response, shared across all nested branches and requested roots.
 
 ## Key Code Locations

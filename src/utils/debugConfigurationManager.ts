@@ -48,7 +48,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         '.go': 'go',
         '.rs': 'lldb',
         '.php': 'php',
-        '.rb': 'ruby'
+        '.rb': 'ruby_lsp'
     };
 
     /**
@@ -73,6 +73,19 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         // .NET needs the compiled assembly, not the .cs source file.
         if (language === 'coreclr') {
             return await this.createDotNetLaunchConfig(fileFullPath);
+        }
+
+        // Ruby LSP accepts a command and file separately, then quotes the file
+        // when it builds the rdbg command. Keeping them separate avoids broken
+        // launches for paths containing spaces or shell metacharacters.
+        if (language === 'ruby_lsp') {
+            return {
+                type: language,
+                request: 'launch',
+                name: 'DebugMCP Launch',
+                command: 'ruby',
+                file: fileFullPath
+            };
         }
 
         // Minimal stub. The language extension's resolveDebugConfiguration

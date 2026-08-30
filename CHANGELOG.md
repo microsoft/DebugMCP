@@ -4,6 +4,11 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Ruby debugging now uses Shopify Ruby LSP correctly.** Automatic `.rb` launch configurations target the modern `ruby_lsp` debug adapter and pass the Ruby command and file separately, including paths with spaces. Scalar rdbg values are returned instead of being mistaken for complex objects, synthetic class metadata is omitted, Ruby arrays use indexed DAP retrieval, and RSpec Testing API launches continue past rdbg's entry pause to the configured breakpoint. Documentation no longer points to the deprecated `rebornix.ruby` extension.
+
 ## [2.3.0] - 2026-07-28
 
 ### Changed

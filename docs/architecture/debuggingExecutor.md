@@ -62,6 +62,9 @@ For data retrieval, the executor uses DAP's custom request mechanism:
 
 All custom requests go through `dapRequest()`, which caps each call so an
 unresponsive adapter rejects with an error instead of hanging the caller.
+Indexed child collections use DAP's `filter: indexed` request form. This is
+required by rdbg for Ruby arrays and is also the standard paging path for other
+adapters that advertise `indexedVariables`.
 
 For Cortex-Debug sessions, common GDB inspection commands are adapted to DAP
 operations that return structured results instead of relying on Debug Console

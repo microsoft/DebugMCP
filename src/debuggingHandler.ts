@@ -103,7 +103,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 // (and any runner where onDidTerminateDebugSession doesn't fire
                 // reliably for parent/child sessions), the test-run-complete signal
                 // is what tells us a clean run finished without ever pausing.
-                const readyState = testRunComplete
+                let readyState = testRunComplete
                     ? await Promise.race([
                         readyPromise,
                         testRunComplete.then(() => 'terminated' as const)
@@ -112,7 +112,24 @@ export class DebuggingHandler implements IDebuggingHandler {
 
                 logger.info(`handleStartDebugging: readyState=${readyState}, fetching current state…`);
                 const testInfo = testName ? ` (test: ${testName})` : '';
-                const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+                let currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+
+                // rdbg reports its debugger-entry pause before the requested
+                // RSpec breakpoint. Continue that Ruby Testing API session once
+                // so start_debugging returns at the user's actual breakpoint.
+                if (readyState === 'stopped' &&
+                    testRunComplete &&
+                    this.executor.getActiveSession()?.type.toLowerCase() === 'ruby_lsp' &&
+                    this.shouldContinueToConfiguredBreakpoint(currentState)) {
+                    const breakpointReady = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
+                    await this.executor.continue();
+                    readyState = await Promise.race([
+                        breakpointReady,
+                        testRunComplete.then(() => 'terminated' as const)
+                    ]);
+                    currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+                }
+
                 logger.info('handleStartDebugging: got current state, returning response');
 
                 switch (readyState) {
@@ -131,6 +148,16 @@ export class DebuggingHandler implements IDebuggingHandler {
         } catch (error) {
             throw new Error(`Error starting debug session: ${error}`);
         }
+    }
+
+    private shouldContinueToConfiguredBreakpoint(state: DebugState): boolean {
+        if (!state.fileName || state.currentLine === null || state.breakpoints.length === 0) {
+            return false;
+        }
+
+        const location = `${state.fileName}:${state.currentLine}`;
+        return !state.breakpoints.some(breakpoint =>
+            breakpoint === location || breakpoint.startsWith(`${location} [`));
     }
 
     /**
@@ -553,6 +580,25 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * Some adapters expose implementation metadata as children of scalar
+     * values. Ruby rdbg, for example, gives Integer and String values a
+     * variablesReference for #class and other internals. Those references do
+     * not make the user value an aggregate and should not hide its result.
+     */
+    private static isScalarLikeType(type: unknown): boolean {
+        if (typeof type !== 'string') {
+            return false;
+        }
+
+        const typeName = type.split(/\r?\n/, 1)[0].trim();
+        return /^(?:Integer|Float|Rational|Complex|String|Symbol|TrueClass|FalseClass|NilClass|Regexp)$/.test(typeName);
+    }
+
+    private static isAdapterMetadataVariable(variable: any): boolean {
+        return variable?.name === '#class' || variable?.name === '%ancestors';
+    }
+
+    /**
      * List the variable names (and types) visible at the current execution
      * point, deliberately without any values, so an agent can discover what
      * exists and then request only the ones it needs.
@@ -692,7 +738,8 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 const isComplex = response.variablesReference > 0 &&
-                    !DebuggingHandler.isPointerLikeType(response.type);
+                    !DebuggingHandler.isPointerLikeType(response.type) &&
+                    !DebuggingHandler.isScalarLikeType(response.type);
                 const expressionIsSensitive = isSensitiveExpression(expression);
                 const { value, redacted } = isComplex
                     ? {
@@ -710,7 +757,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                         '  ',
                         1,
                         new Set<number>(),
-                        { remaining: this.maxExpandedFields }
+                        { remaining: this.maxExpandedFields },
+                        response
                     );
                     if (children.text) {
                         resultText += `\n${children.text}`;
@@ -759,7 +807,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         let redacted = false;
         const variablesReference = Number(variable.variablesReference) || 0;
         const isComplex = variablesReference > 0 &&
-            !DebuggingHandler.isPointerLikeType(variable.type);
+            !DebuggingHandler.isPointerLikeType(variable.type) &&
+            !DebuggingHandler.isScalarLikeType(variable.type);
         if (includeValue && isComplex) {
             const redactionName = DebuggingHandler.redactionVariableName(variable, name);
             if (isSensitiveName(redactionName)) {
@@ -783,7 +832,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 `${indent}  `,
                 depth + 1,
                 visitedReferences,
-                expansionBudget
+                expansionBudget,
+                variable
             );
             if (children.text) {
                 text += `\n${children.text}`;
@@ -799,7 +849,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         indent: string,
         depth: number,
         visitedReferences: Set<number>,
-        expansionBudget: { remaining: number }
+        expansionBudget: { remaining: number },
+        parent: any = {}
     ): Promise<{ text: string; redacted: boolean }> {
         if (depth > this.maxVariableExpansionDepth) {
             return { text: `${indent}<maximum expansion depth reached>`, redacted: false };
@@ -810,7 +861,9 @@ export class DebuggingHandler implements IDebuggingHandler {
 
         const nextVisited = new Set(visitedReferences);
         nextVisited.add(variablesReference);
-        const children = await this.executor.getVariableChildren(variablesReference);
+        const children = (await this.executor.getVariableChildren(variablesReference, {
+            indexedVariables: parent.indexedVariables
+        })).filter(child => !DebuggingHandler.isAdapterMetadataVariable(child));
         const rendered: string[] = [];
         let redacted = false;
         let renderedChildren = 0;

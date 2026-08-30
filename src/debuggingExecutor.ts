@@ -20,6 +20,10 @@ export interface TestDebugDispatch {
     runComplete: Promise<void>;
 }
 
+export interface VariableChildrenOptions {
+    indexedVariables?: number;
+}
+
 /**
  * Interface for debugging execution operations
  */
@@ -37,7 +41,7 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
-    getVariableChildren(variablesReference: number): Promise<any[]>;
+    getVariableChildren(variablesReference: number, options?: VariableChildrenOptions): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
@@ -551,7 +555,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * handler only reads children for variables explicitly requested by the
      * caller, rather than recursively dumping every value in scope.
      */
-    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+    public async getVariableChildren(
+        variablesReference: number,
+        options: VariableChildrenOptions = {}
+    ): Promise<any[]> {
         if (variablesReference <= 0) {
             return [];
         }
@@ -562,8 +569,14 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
+            const indexedVariables = Number(options.indexedVariables) || 0;
             const response = await this.dapRequest(activeSession, 'variables', {
-                variablesReference
+                variablesReference,
+                ...(indexedVariables > 0 ? {
+                    filter: 'indexed',
+                    start: 0,
+                    count: indexedVariables
+                } : {})
             });
             return response?.variables || [];
         } catch (error) {

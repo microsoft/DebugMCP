@@ -16,7 +16,8 @@ Delegating to those mechanisms keeps this class small and ensures defaults stay 
 ## Responsibility
 
 - Return a launch.json configuration name when the caller provides one — VS Code looks it up itself.
-- Otherwise, return a minimal launch stub (`type`, `request`, `name`, `program`) for the file's language and let the language extension resolve the rest.
+- Otherwise, return a minimal launch stub for the file's language and let the language extension resolve the rest.
+- For Ruby, use Shopify Ruby LSP's `ruby_lsp` adapter and pass `command` and `file` separately so the adapter safely quotes the target path.
 - For `.NET` (`coreclr`), locate the project's built DLL since `program` cannot be a `.cs` source file.
 - Detect the debugger `type` from a file extension.
 
@@ -39,7 +40,7 @@ Maps file extensions to debugger `type` values:
 - `.go` → `go`
 - `.rs` → `lldb`
 - `.php` → `php`
-- `.rb` → `ruby`
+- `.rb` → `ruby_lsp`
 
 ### Test framework support
 
@@ -49,7 +50,8 @@ Test launches are dispatched via `DebuggingExecutor.debugTestAtCursor`, not via 
 
 1. If `configurationName` is provided and is not the sentinel `Default Configuration`, return that name verbatim.
 2. Otherwise, if the file is C# (`coreclr`), walk up to find the `.csproj`, locate its built DLL under `bin/{Debug,Release}/<tfm>/`, and return a coreclr config pointing at that assembly.
-3. Otherwise, return `{ type, request: 'launch', name: 'DebugMCP Launch', program: fileFullPath }`.
+3. For Ruby (`ruby_lsp`), return `{ type, request: 'launch', name: 'DebugMCP Launch', command: 'ruby', file: fileFullPath }`.
+4. Otherwise, return `{ type, request: 'launch', name: 'DebugMCP Launch', program: fileFullPath }`.
 
 ## Key code locations
 
