@@ -25,10 +25,9 @@ export interface IDebugConfigurationManager {
  *  - The language extension's DebugConfigurationProvider.resolveDebugConfiguration
  *    (which fills in cwd, console, env, and other defaults for ad-hoc launches)
  *
- * Test launches go through DebuggingExecutor.debugTestAtCursor instead — VS Code's
- * Testing API knows how to debug a specific test for any language whose extension
- * registers a TestController, including the parent/child process handoff that
- * `dotnet test` requires.
+ * Test launches go through DebuggingExecutor.debugTestAtCursor. It uses the
+ * exact debugger CodeLens or VS Code's Testing API while preserving the
+ * parent/child process handoff required by `dotnet test`.
  */
 export class DebugConfigurationManager implements IDebugConfigurationManager {
     private static readonly AUTO_LAUNCH_CONFIG = 'Default Configuration';
@@ -48,7 +47,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         '.go': 'go',
         '.rs': 'lldb',
         '.php': 'php',
-        '.rb': 'ruby'
+        '.rb': 'ruby_lsp'
     };
 
     /**
@@ -73,6 +72,19 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         // .NET needs the compiled assembly, not the .cs source file.
         if (language === 'coreclr') {
             return await this.createDotNetLaunchConfig(fileFullPath);
+        }
+
+        // Ruby LSP accepts a command and file separately, then quotes the file
+        // when it builds the rdbg command. Keeping them separate avoids broken
+        // launches for paths containing spaces or shell metacharacters.
+        if (language === 'ruby_lsp') {
+            return {
+                type: language,
+                request: 'launch',
+                name: 'DebugMCP Launch',
+                command: 'ruby',
+                file: fileFullPath
+            };
         }
 
         // Minimal stub. The language extension's resolveDebugConfiguration

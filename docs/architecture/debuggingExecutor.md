@@ -38,6 +38,13 @@ VS Code's debug API is powerful but requires careful handling. `DebuggingExecuto
 
 ## Key Concepts
 
+### Single-test dispatch
+
+The executor first selects the debugger CodeLens that names the requested test, contains it, or starts on its
+definition line. Modern Ruby RSpec CodeLenses omit the launch program, so the executor combines the configured
+RSpec command with the exact `file:line` and starts `ruby_lsp` directly. Other CodeLens providers run their own
+command, while languages without a matching CodeLens retain the `testing.debugAtCursor` fallback.
+
 ### VS Code Debug Commands
 
 Stepping and control operations use VS Code's command system:
@@ -62,6 +69,9 @@ For data retrieval, the executor uses DAP's custom request mechanism:
 
 All custom requests go through `dapRequest()`, which caps each call so an
 unresponsive adapter rejects with an error instead of hanging the caller.
+Indexed child collections use DAP's `filter: indexed` request form. This is
+required by rdbg for Ruby arrays and is also the standard paging path for other
+adapters that advertise `indexedVariables`.
 
 For Cortex-Debug sessions, common GDB inspection commands are adapted to DAP
 operations that return structured results instead of relying on Debug Console

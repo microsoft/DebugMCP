@@ -19,10 +19,12 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 ## ✨ What's New
 
+### Unreleased
+- **Reliable single-test debugging** — `start_debugging` with a `testName` prefers the language extension's exact debugger CodeLens and falls back to the VS Code Testing API. This preserves exact RSpec `file:line` launches for Ruby while supporting other language test runners.
+
 ### 2.2
 - **Cross-agent `debug-live` skill install** — the systematic debugging workflow ships as an [Agent Skill](https://agentskills.io) and is now installed into the **standard skills directories** — `~/.agents/skills/` (the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode) and `~/.copilot/skills/` when present — so it's discoverable everywhere instead of being copied next to each agent's config where nothing scans it (fixes [#105](https://github.com/microsoft/DebugMCP/issues/105), where VS Code never loaded the skill). The server also advertises MCP `instructions` and the `start_debugging` tool points at the skill for the full workflow.
 - **Pause running programs** — new `pause_execution` tool interrupts a freely-running program and stops at its current location, even with no breakpoint set (great for busy loops and embedded/bare-metal targets), so you can then inspect state or step from there.
-- **Robust debugging via the VS Code Testing API** — `start_debugging` with a `testName` uses the VS Code Testing API to discover and launch the test, producing consistent breakpoint hits inside individual test cases across language test runners (pytest, Jest/Vitest, Java, .NET, Go, etc.).
 
 ## 🚀 Quick Install
 
@@ -154,7 +156,7 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **Go** | [Go](https://marketplace.visualstudio.com/items?itemName=golang.Go) | `.go` | ✅ Fully Supported |
 | **Rust** | [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) | `.rs` | ✅ Fully Supported |
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
-| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
+| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=Shopify.ruby-lsp) | `.rb` | ✅ Fully Supported |
 | **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs`, `.csproj` | ✅ Fully Supported |
 
 ## Configuration
@@ -428,7 +430,7 @@ The extension handles debug configurations intelligently:
   - **Go**: [Go extension](vscode:extension/golang.go)
   - **Rust**: [rust-analyzer extension](vscode:extension/rust-lang.rust-analyzer)
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
-  - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
+  - **Ruby**: [Ruby extension](vscode:extension/Shopify.ruby-lsp) and the [`debug` gem](https://github.com/ruby/debug)
 - MCP-compatible AI assistant (Copilot, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
 
 ## Development
