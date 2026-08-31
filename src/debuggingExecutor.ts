@@ -6,7 +6,7 @@ import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
 
 /**
- * Outcome of dispatching a test debugger through a matching CodeLens or
+ * Outcome of dispatching a test debugger through the RSpec CodeLens or
  * `testing.debugAtCursor`.
  *
  * `started` indicates the command was dispatched successfully.
@@ -86,6 +86,10 @@ export function rubyRspecDebugConfiguration(program: string): vscode.DebugConfig
         program,
         env: { DISABLE_SPRING: '1' }
     };
+}
+
+export function shouldUseDebuggerCodeLens(fileFullPath: string): boolean {
+    return fileFullPath.endsWith('_spec.rb');
 }
 
 function codeLensCommandMatchesTest(command: vscode.Command | undefined, testName: string): boolean {
@@ -172,8 +176,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * Debug a single test through its debugger CodeLens when available, then
-     * fall back to VS Code's Testing API.
+     * Debug a single RSpec example through its debugger CodeLens. Preserve the
+     * original VS Code Testing API path for every other language and test type.
      *
      * Works for any language whose extension registers a TestController
      * (Python, Jest/Mocha, JUnit, C# Dev Kit, Go, Rust, ...). This is the
@@ -184,8 +188,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Implementation strategy:
      *  1. Open the file in an editor.
      *  2. Place the cursor on the test method's definition line.
-     *  3. Execute the narrowest matching debugger CodeLens when the language
-     *     extension publishes one.
+     *  3. For `*_spec.rb`, execute the narrowest matching debugger CodeLens.
      *  4. Otherwise execute the built-in `testing.debugAtCursor` command.
      *
      * The handler's existing readiness wait picks up the resulting session.
@@ -199,9 +202,11 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             );
         }
 
-        const codeLensDispatch = await this.debugTestWithCodeLens(positioned, testName);
-        if (codeLensDispatch) {
-            return codeLensDispatch;
+        if (shouldUseDebuggerCodeLens(fileFullPath)) {
+            const codeLensDispatch = await this.debugTestWithCodeLens(positioned, testName);
+            if (codeLensDispatch) {
+                return codeLensDispatch;
+            }
         }
 
         // Trigger test discovery before dispatching. Some controllers (notably

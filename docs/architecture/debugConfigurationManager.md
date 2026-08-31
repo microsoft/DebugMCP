@@ -21,7 +21,7 @@ Delegating to those mechanisms keeps this class small and ensures defaults stay 
 - For `.NET` (`coreclr`), locate the project's built DLL since `program` cannot be a `.cs` source file.
 - Detect the debugger `type` from a file extension.
 
-**Test debugging is not handled here.** `DebuggingExecutor.debugTestAtCursor` prefers the selected test's debugger CodeLens and falls back to VS Code's built-in `testing.debugAtCursor` command. The fallback supports any language whose extension registers a Test Explorer integration and preserves parent/child process attach (e.g. `dotnet test`'s testhost).
+**Test debugging is not handled here.** `DebuggingExecutor.debugTestAtCursor` uses the exact debugger CodeLens for Ruby RSpec files and preserves VS Code's built-in `testing.debugAtCursor` command for every other language and test type. The Testing API supports any language whose extension registers a Test Explorer integration and preserves parent/child process attach (e.g. `dotnet test`'s testhost).
 
 ## Key Concepts
 

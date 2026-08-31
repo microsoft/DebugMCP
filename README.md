@@ -20,7 +20,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 ## ✨ What's New
 
 ### Unreleased
-- **Reliable single-test debugging** — `start_debugging` with a `testName` prefers the language extension's exact debugger CodeLens and falls back to the VS Code Testing API. This preserves exact RSpec `file:line` launches for Ruby while supporting other language test runners.
+- **Reliable single-test debugging** — `start_debugging` with a `testName` uses the exact debugger CodeLens for Ruby RSpec files and preserves the VS Code Testing API path for every other language. This keeps exact RSpec `file:line` launches without changing existing test-runner behavior.
 
 ### 2.2
 - **Cross-agent `debug-live` skill install** — the systematic debugging workflow ships as an [Agent Skill](https://agentskills.io) and is now installed into the **standard skills directories** — `~/.agents/skills/` (the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode) and `~/.copilot/skills/` when present — so it's discoverable everywhere instead of being copied next to each agent's config where nothing scans it (fixes [#105](https://github.com/microsoft/DebugMCP/issues/105), where VS Code never loaded the skill). The server also advertises MCP `instructions` and the `start_debugging` tool points at the skill for the full workflow.

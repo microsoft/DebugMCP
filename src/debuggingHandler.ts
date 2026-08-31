@@ -80,8 +80,8 @@ export class DebuggingHandler implements IDebuggingHandler {
             let testRunComplete: Promise<void> | undefined;
 
             if (testName && !hasExplicitConfig) {
-                // Prefer the test's exact debugger CodeLens, then fall back to
-                // VS Code's Testing API.
+                // RSpec needs its exact debugger CodeLens. Every other test
+                // retains the original VS Code Testing API dispatch.
                 const dispatch = await this.executor.debugTestAtCursor(fileFullPath, testName);
                 started = dispatch.started;
                 testRunComplete = dispatch.runComplete;

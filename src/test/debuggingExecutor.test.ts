@@ -5,7 +5,8 @@ import * as vscode from 'vscode';
 import {
     addRubyRspecProgram,
     findDebugCodeLens,
-    rubyRspecDebugConfiguration
+    rubyRspecDebugConfiguration,
+    shouldUseDebuggerCodeLens
 } from '../debuggingExecutor';
 
 suite('DebuggingExecutor CodeLens selection', () => {
@@ -84,6 +85,12 @@ suite('DebuggingExecutor CodeLens selection', () => {
                 env: { DISABLE_SPRING: '1' }
             }
         );
+    });
+
+    test('limits debugger CodeLens dispatch to RSpec files', () => {
+        assert.strictEqual(shouldUseDebuggerCodeLens('/repo/spec/example_spec.rb'), true);
+        assert.strictEqual(shouldUseDebuggerCodeLens('/repo/src/number_pattern.rs'), false);
+        assert.strictEqual(shouldUseDebuggerCodeLens('/repo/test/example_test.rb'), false);
     });
 });
 
