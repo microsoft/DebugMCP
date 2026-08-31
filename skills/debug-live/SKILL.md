@@ -234,6 +234,7 @@ Load the relevant reference file for the language you're debugging:
 - **C#** → `references/troubleshooting/csharp.md`
 - **C++** → `references/troubleshooting/cpp.md`
 - **Go** → `references/troubleshooting/go.md`
+- **Ruby** → `references/troubleshooting/ruby.md`
 
 Each reference covers prerequisites (which VS Code extension to install), framework-specific
 configuration (e.g. enabling `pytest` test discovery, building `.NET` projects before

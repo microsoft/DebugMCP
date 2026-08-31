@@ -28,7 +28,8 @@ skills/debugmcp/
         ├── java.md
         ├── csharp.md
         ├── cpp.md
-        └── go.md
+        ├── go.md
+        └── ruby.md
 ```
 
 ## Installation
