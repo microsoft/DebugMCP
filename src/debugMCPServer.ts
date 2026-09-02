@@ -330,6 +330,16 @@ export class DebugMCPServer {
             },
         }, async (args: { expression: string }) =>
             this.runTool('evaluate_expression', () => debuggingHandler.handleEvaluateExpression(args)));
+
+        // Debug status tool (read-only; the safe way to ask "is it paused yet?")
+        server.registerTool('get_debug_status', {
+            description: 'Check whether the debuggee is currently paused at a breakpoint, and where. Read-only and safe to call at any time - it never pauses or resumes anything. Use it after triggering the code path under test instead of guessing, and pass waitForPauseSeconds to block until the breakpoint is actually hit. Returns status "paused", "running" or "no-session"; "running" is a normal answer, not an error.',
+            inputSchema: {
+                waitForPauseSeconds: z.number().int().min(0).max(600).optional()
+                    .describe('Block up to this many seconds waiting for the debuggee to hit a breakpoint, returning as soon as it does. Omit or 0 for an immediate snapshot. If it never pauses, the call still returns normally with status "running".'),
+            },
+        }, async (args: { waitForPauseSeconds?: number }) =>
+            this.runTool('get_debug_status', () => debuggingHandler.handleGetDebugStatus(args)));
     }
 
     /**

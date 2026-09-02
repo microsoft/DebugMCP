@@ -6,6 +6,20 @@ import { WorkspaceRegistry, WindowRegistration } from './utils/workspaceRegistry
 import { logger } from './utils/logger';
 
 /**
+ * The most recently resolved target, shared by every session in this window.
+ *
+ * `RoutingDebuggingHandler` is per-MCP-session, but the debug session it drives
+ * belongs to the *window* and outlives any one MCP session. MCP clients open new
+ * sessions freely (the CLI does so constantly), and each new session starts with
+ * an empty per-session cache - so a hint-less call such as `evaluate_expression`,
+ * a step, or a continue would fail with "no active debug target" purely because
+ * it landed on a fresh session, even with a single window open and a live
+ * debugger attached. Remembering the last resolved target here makes routing
+ * survive that churn.
+ */
+let lastRoutedTarget: WindowRegistration | undefined;
+
+/**
  * Router-window handler (one instance per MCP session) that forwards every
  * operation to the ControlServer of the window owning the requested workspace.
  *
@@ -34,6 +48,12 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 	/**
 	 * Resolve (and cache) the target from an optional path hint; a hint always
 	 * re-resolves, otherwise the cached target is reused.
+	 *
+	 * Hint-less operations (step, continue, evaluate, inspect) are the majority
+	 * of a debugging session and carry nothing to route on, so when this session
+	 * has no cached target we recover rather than fail: a single registered
+	 * window is unambiguous, and otherwise the last target routed by any session
+	 * in this window is the one driving the debugger.
 	 */
 	private resolveTarget(pathHint?: string): WindowRegistration {
 		if (pathHint) {
@@ -47,13 +67,57 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 					`Registered windows: ${candidates || '(none)'}`
 			);
 			if (found) {
-				this.target = found;
+				this.adoptTarget(found);
+			}
+		}
+		if (!this.target) {
+			const recovered = this.recoverTarget();
+			if (recovered) {
+				this.adoptTarget(recovered);
 			}
 		}
 		if (!this.target) {
 			throw new Error(this.noTargetMessage(pathHint));
 		}
 		return this.target;
+	}
+
+	/** Cache a resolved target for this session and for later hint-less sessions. */
+	private adoptTarget(target: WindowRegistration): void {
+		this.target = target;
+		lastRoutedTarget = target;
+	}
+
+	/**
+	 * Recover a target for a hint-less call on a session that has never routed.
+	 *
+	 * Only returns a window that is currently registered, so a stale pid from a
+	 * closed window is never used.
+	 */
+	private recoverTarget(): WindowRegistration | undefined {
+		const windows = this.registry.list();
+		if (windows.length === 1) {
+			logger.info(
+				`No routing hint and no cached target; using the only registered window pid=${windows[0].pid} port=${windows[0].controlPort}.`
+			);
+			return windows[0];
+		}
+		if (lastRoutedTarget) {
+			// Match the port too: a window that restarted its control server is a
+			// different endpoint, and the stale port would just fail to connect.
+			const stillLive = windows.find(
+				(w) => w.pid === lastRoutedTarget!.pid && w.controlPort === lastRoutedTarget!.controlPort
+			);
+			if (stillLive) {
+				logger.info(
+					`No routing hint and no cached target; reusing the last routed window pid=${stillLive.pid} port=${stillLive.controlPort}.`
+				);
+				return stillLive;
+			}
+			// The window that was driving the debugger has gone away.
+			lastRoutedTarget = undefined;
+		}
+		return undefined;
 	}
 
 	private noTargetMessage(pathHint?: string): string {
@@ -71,18 +135,26 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		}
 		return (
 			'DebugMCP has no active debug target for this session. ' +
-			'Call start_debugging (or add_breakpoint) with a file path first so DebugMCP can route to the right VS Code window.'
+			(windows.length
+				? `Several VS Code windows are registered (${openList}) and none has been routed to yet - ` +
+					'call start_debugging (or add_breakpoint) with a file path so DebugMCP can pick the right one.'
+				: 'No DebugMCP-enabled VS Code windows are currently registered - open the workspace in VS Code.')
 		);
 	}
 
 	private async forward(op: string, args: unknown, pathHint?: string): Promise<string> {
 		const target = this.resolveTarget(pathHint);
+		logger.info(`Forwarding ${op} to pid=${target.pid} port=${target.controlPort}${pathHint ? '' : ' (cached target, no path hint)'}`);
 		try {
 			return await this.post(target, op, args);
 		} catch (error) {
 			// Failed round-trip usually means the window closed; drop the cache
-			// so the next path-bearing call re-resolves.
+			// so the next call re-resolves against the live registry.
 			this.target = undefined;
+			if (lastRoutedTarget?.pid === target.pid) {
+				lastRoutedTarget = undefined;
+			}
+			logger.warn(`Forward of ${op} failed; dropped cached target so the next call re-resolves.`);
 			throw error;
 		}
 	}
@@ -230,5 +302,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
 	public handleEvaluateExpression(args: { expression: string }): Promise<string> {
 		return this.forward('handleEvaluateExpression', args);
+	}
+
+	public handleGetDebugStatus(args: { waitForPauseSeconds?: number } = {}): Promise<string> {
+		return this.forward('handleGetDebugStatus', args);
 	}
 }
