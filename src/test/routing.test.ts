@@ -146,6 +146,55 @@ suite('Multi-window routing', () => {
 		assert.strictEqual(handlerB.calls.length, 0);
 	});
 
+	test('virtual source breakpoint uses workingDirectory to select its window', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const repoB = path.join(dir, 'repoB');
+		const handlerA = new RecordingHandler('A');
+		const handlerB = new RecordingHandler('B');
+		await startWindow('a.json', [repoA], handlerA);
+		await startWindow('b.json', [repoB], handlerB);
+
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		const result = await routing.handleAddBreakpoint({
+			fileFullPath: 'al-preview://AlLang/app/Table/18/Customer.dal',
+			workingDirectory: repoB,
+			line: 1
+		});
+
+		assert.strictEqual(result, 'B:addBp');
+		assert.strictEqual(handlerA.calls.length, 0);
+	});
+
+	test('virtual source breakpoint falls back to the sole registered window', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const handlerA = new RecordingHandler('A');
+		await startWindow('a.json', [repoA], handlerA);
+
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		const result = await routing.handleAddBreakpoint({
+			fileFullPath: 'al-preview://AlLang/app/Table/18/Customer.dal',
+			line: 1
+		});
+
+		assert.strictEqual(result, 'A:addBp');
+	});
+
+	test('virtual source breakpoint requires workingDirectory when multiple windows are open', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const repoB = path.join(dir, 'repoB');
+		await startWindow('a.json', [repoA], new RecordingHandler('A'));
+		await startWindow('b.json', [repoB], new RecordingHandler('B'));
+
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		await assert.rejects(
+			() => routing.handleAddBreakpoint({
+				fileFullPath: 'al-preview://AlLang/app/Table/18/Customer.dal',
+				line: 1
+			}),
+			/Pass workingDirectory/
+		);
+	});
+
 	test('throws a helpful error when no window owns the path', async () => {
 		const repoA = path.join(dir, 'repoA');
 		const repoB = path.join(dir, 'repoB');
@@ -227,4 +276,3 @@ suite('Multi-window routing', () => {
 		);
 	});
 });
-

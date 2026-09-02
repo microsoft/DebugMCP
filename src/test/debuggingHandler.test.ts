@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as assert from 'assert';
+import * as vscode from 'vscode';
 import { DebugState } from '../debugState';
 import { DebuggingHandler } from '../debuggingHandler';
 import { IDebuggingExecutor } from '../debuggingExecutor';
@@ -204,4 +205,52 @@ suite('DebuggingHandler waitForStateChange (event-driven)', () => {
         assert.ok(elapsed >= 200, `should wait for the ~300ms timeout, only took ${elapsed}ms`);
         assert.ok(elapsed < 3000, `timeout should bound the wait, took ${elapsed}ms`);
     });
+});
+
+suite('DebuggingHandler virtual source breakpoints', () => {
+	test('passes an AL-style virtual .dal URI to the debug executor unchanged', async () => {
+		const scheme = `al-preview-test-${Date.now()}`;
+		const source = `${scheme}://AlLang/437dbf0e84ff417a965ded2bb9650972/Table/18/Customer.dal`;
+		let breakpointUri: vscode.Uri | undefined;
+		const provider = vscode.workspace.registerTextDocumentContentProvider(scheme, {
+			provideTextDocumentContent: () => 'table 18 Customer\n{\n}'
+		});
+		const executor: IDebuggingExecutor = {
+			startDebugging: async () => true,
+			debugTestAtCursor: async () => ({ started: true, runComplete: Promise.resolve() }),
+			stopDebugging: async () => { /* noop */ },
+			stepOver: async () => { /* noop */ },
+			stepInto: async () => { /* noop */ },
+			stepOut: async () => { /* noop */ },
+			continue: async () => { /* noop */ },
+			pause: async () => { /* noop */ },
+			restart: async () => { /* noop */ },
+			addBreakpoint: async (uri) => { breakpointUri = uri; },
+			removeBreakpoint: async () => { /* noop */ },
+			getCurrentDebugState: async () => new DebugState(),
+			getVariables: async () => ({}),
+			getVariableChildren: async () => [],
+			evaluateExpression: async () => ({}),
+			getBreakpoints: () => [],
+			clearAllBreakpoints: () => { /* noop */ },
+			hasActiveSession: async () => false,
+			getActiveSession: () => undefined,
+			waitForDebugSessionReady: async () => 'no-session'
+		};
+
+		try {
+			const handler = new DebuggingHandler(executor, {} as any, 30);
+			const result = await handler.handleAddBreakpoint({ fileFullPath: source, line: 2 });
+
+			assert.strictEqual(breakpointUri?.scheme, scheme);
+			assert.strictEqual(breakpointUri?.authority, 'AlLang');
+			assert.strictEqual(
+				breakpointUri?.path,
+				'/437dbf0e84ff417a965ded2bb9650972/Table/18/Customer.dal'
+			);
+			assert.match(result, /Breakpoint added/);
+		} finally {
+			provider.dispose();
+		}
+	});
 });

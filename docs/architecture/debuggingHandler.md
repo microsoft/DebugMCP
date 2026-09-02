@@ -11,6 +11,7 @@ Debugging is inherently asynchronous - when you step over a line, the debugger t
 ## Responsibility
 
 - Orchestrate debugging operations (start, stop, step, breakpoints)
+- Preserve language-extension virtual source URIs when opening documents and setting breakpoints
 - Detect when debugger state has meaningfully changed after commands
 - Format debug state into human/AI-readable responses
 - Recursively format explicitly requested structs and arrays
@@ -58,6 +59,13 @@ A state change is considered meaningful when any of these change:
 - Current line number
 - Frame name (function/method)
 - Frame ID
+
+### Virtual source documents
+
+Breakpoint and logpoint locations may be native paths or VS Code virtual-document URIs.
+`src/utils/sourceUri.ts` keeps custom schemes intact instead of converting them into malformed
+`file:` URIs. This is required for language-extension sources such as Business Central `.dal`
+documents served through the `al-preview:` scheme.
 
 ### Root Cause Analysis
 

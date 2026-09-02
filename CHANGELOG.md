@@ -4,6 +4,11 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Breakpoint, logpoint, and removal tools now support VS Code virtual-document URIs, including Business Central `al-preview:` `.dal` sources. An optional `workingDirectory` selects the correct workspace when multiple editor windows are open.
+
 ## [2.3.0] - 2026-07-28
 
 ### Changed
