@@ -305,25 +305,29 @@ export class DebuggingHandler implements IDebuggingHandler {
                     `after ${Date.now() - startedAt}ms (waited up to ${waitSeconds}s)`
             );
 
-            if (!paused) {
-                return JSON.stringify(
-                    {
-                        status: state.sessionActive ? 'running' : 'no-session',
-                        paused: false,
-                        sessionActive: state.sessionActive,
-                        configurationName: state.configurationName,
-                        breakpoints: state.breakpoints,
-                        hint: state.sessionActive
+            // One envelope for every outcome: a machine consumer should not have
+            // to special-case the shape to find out whether it is paused.
+            return JSON.stringify(
+                {
+                    status: paused ? 'paused' : state.sessionActive ? 'running' : 'no-session',
+                    paused,
+                    sessionActive: state.sessionActive,
+                    configurationName: state.configurationName,
+                    breakpoints: state.breakpoints,
+                    requestedWaitSeconds: requestedSeconds,
+                    effectiveWaitSeconds: waitSeconds,
+                    state: paused ? JSON.parse(state.toString()) : undefined,
+                    hint: paused
+                        ? undefined
+                        : waitSeconds < requestedSeconds
+                          ? `The wait was clamped to the configured operation timeout of ${waitSeconds}s. The debuggee had not hit a breakpoint by then; call get_debug_status again to keep waiting.`
+                          : state.sessionActive
                             ? 'The debuggee is running and has not hit a breakpoint. Trigger the code path, then call get_debug_status again with waitForPauseSeconds to block until it does.'
                             : 'No debug session is active. Call start_debugging first.'
-                    },
-                    null,
-                    2
-                );
-            }
-
-            // Paused: the full state already carries location, frame and stack.
-            return JSON.stringify({ status: 'paused', paused: true, state: JSON.parse(state.toString()) }, null, 2);
+                },
+                null,
+                2
+            );
         } catch (error) {
             logger.warn(`debug status: failed - ${error instanceof Error ? error.message : String(error)}`);
             throw new Error(`Error getting debug status: ${error}`);

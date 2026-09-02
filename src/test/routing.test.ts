@@ -181,7 +181,7 @@ suite('Multi-window routing', () => {
 		assert.deepStrictEqual(handlerA.calls.map(c => c.op), ['stepOver', 'eval']);
 	});
 
-	test('hint-less call on a fresh session reuses the window last routed to', async () => {
+	test('hint-less call on a fresh session fails closed when several windows are registered', async () => {
 		const repoA = path.join(dir, 'repoA');
 		const repoB = path.join(dir, 'repoB');
 		const handlerA = new RecordingHandler('A');
@@ -192,11 +192,12 @@ suite('Multi-window routing', () => {
 		const first = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
 		await first.handleStartDebugging({ fileFullPath: path.join(repoB, 'm.py'), workingDirectory: repoB });
 
-		// The debug session belongs to the window, not to the MCP session that
-		// started it, so a later session must still reach it.
+		// Another agent's session must never inherit that routing: guessing here
+		// would silently drive someone else's debugger.
 		const second = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
-		assert.strictEqual(await second.handleContinue(), 'B:continue');
+		await assert.rejects(() => second.handleContinue(), /no active debug target/);
 		assert.strictEqual(handlerA.calls.length, 0, 'the other window must not be touched');
+		assert.deepStrictEqual(handlerB.calls.map(c => c.op), ['start'], 'only the routed call reached B');
 	});
 
 	/**
