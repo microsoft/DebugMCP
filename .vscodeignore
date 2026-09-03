@@ -2,6 +2,7 @@
 .vscode-test/**
 .github/**
 src/**
+scripts/**
 out/**
 node_modules/**
 docs/**

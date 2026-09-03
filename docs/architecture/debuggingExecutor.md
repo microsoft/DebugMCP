@@ -57,10 +57,20 @@ For data retrieval, the executor uses DAP's custom request mechanism:
 | `stackTrace` | Get call stack and frame names |
 | `scopes` | Get variable scopes for a frame |
 | `variables` | Get variables within a scope |
-| `evaluate` | Evaluate expressions in REPL context |
+| `evaluate` | Evaluate expressions in the adapter-appropriate context |
+| `readMemory` | Read raw target memory for GDB `x/...` commands |
 
 All custom requests go through `dapRequest()`, which caps each call so an
 unresponsive adapter rejects with an error instead of hanging the caller.
+
+For Cortex-Debug sessions, common GDB inspection commands are adapted to DAP
+operations that return structured results instead of relying on Debug Console
+text that Cortex-Debug does not include in its `evaluate` response:
+
+- `p` / `print` use watch-context expression evaluation.
+- `x/...` resolves the address and uses `readMemory`.
+- Struct and array `variablesReference` values are expanded only for variables
+  explicitly requested by the caller.
 
 ### Session Readiness
 

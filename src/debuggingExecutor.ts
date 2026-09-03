@@ -37,12 +37,13 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
+    getVariableChildren(variablesReference: number): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
-    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>;
+    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
 }
 
 /**
@@ -546,6 +547,31 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
+     * Expand a DAP variable reference. Kept separate from getVariables so the
+     * handler only reads children for variables explicitly requested by the
+     * caller, rather than recursively dumping every value in scope.
+     */
+    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+        if (variablesReference <= 0) {
+            return [];
+        }
+
+        try {
+            const activeSession = vscode.debug.activeDebugSession;
+            if (!activeSession) {
+                throw new Error('No active debug session');
+            }
+
+            const response = await this.dapRequest(activeSession, 'variables', {
+                variablesReference
+            });
+            return response?.variables || [];
+        } catch (error) {
+            throw new Error(`Failed to expand variable: ${error}`);
+        }
+    }
+
+    /**
      * Evaluate an expression in the current debug context
      */
     public async evaluateExpression(expression: string, frameId: number): Promise<any> {
@@ -553,6 +579,21 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             const activeSession = vscode.debug.activeDebugSession;
             if (!activeSession) {
                 throw new Error('No active debug session');
+            }
+
+            if (activeSession.type.toLowerCase() === 'cortex-debug') {
+                const memoryCommand = DebuggingExecutor.parseGdbMemoryCommand(expression);
+                if (memoryCommand) {
+                    return await this.evaluateGdbMemoryCommand(activeSession, memoryCommand, frameId);
+                }
+
+                const printCommand = DebuggingExecutor.parseGdbPrintCommand(expression);
+                return await this.dapRequest(activeSession, 'evaluate', {
+                    expression: printCommand?.expression ?? expression,
+                    frameId,
+                    context: 'watch',
+                    ...(printCommand?.hex ? { format: { hex: true } } : {})
+                });
             }
 
             const response = await this.dapRequest(activeSession, 'evaluate', {
@@ -565,6 +606,98 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         } catch (error) {
             throw new Error(`Failed to evaluate expression: ${error}`);
         }
+    }
+
+    private static parseGdbPrintCommand(expression: string): { expression: string; hex: boolean } | undefined {
+        const match = expression.match(/^\s*(?:p|print)(?:\/([a-z]+))?\s+([\s\S]+)$/i);
+        if (!match) {
+            return undefined;
+        }
+
+        return {
+            expression: match[2].trim(),
+            hex: (match[1] || '').toLowerCase().includes('x')
+        };
+    }
+
+    private static parseGdbMemoryCommand(
+        expression: string
+    ): { addressExpression: string; count: number; unitSize: number } | undefined {
+        const match = expression.match(/^\s*x\/(\d+)?([a-z]*)\s+([\s\S]+)$/i);
+        if (!match) {
+            return undefined;
+        }
+
+        const count = match[1] ? Number.parseInt(match[1], 10) : 1;
+        const modifiers = (match[2] || '').toLowerCase();
+        const unit = [...modifiers].find(modifier => ['b', 'h', 'w', 'g'].includes(modifier)) || 'w';
+        const unitSizes: Record<string, number> = { b: 1, h: 2, w: 4, g: 8 };
+
+        if (!Number.isSafeInteger(count) || count <= 0) {
+            throw new Error(`Invalid GDB memory element count: ${match[1]}`);
+        }
+
+        const byteCount = count * unitSizes[unit];
+        if (byteCount > 4096) {
+            throw new Error(`GDB memory reads are limited to 4096 bytes (requested ${byteCount}).`);
+        }
+
+        return {
+            addressExpression: match[3].trim(),
+            count,
+            unitSize: unitSizes[unit]
+        };
+    }
+
+    private async evaluateGdbMemoryCommand(
+        session: vscode.DebugSession,
+        command: { addressExpression: string; count: number; unitSize: number },
+        frameId: number
+    ): Promise<any> {
+        const addressResponse = await this.dapRequest(session, 'evaluate', {
+            expression: command.addressExpression,
+            frameId,
+            context: 'watch'
+        });
+        const memoryReference = addressResponse?.memoryReference ||
+            DebuggingExecutor.extractMemoryReference(addressResponse?.result) ||
+            DebuggingExecutor.extractMemoryReference(command.addressExpression);
+
+        if (!memoryReference) {
+            throw new Error(
+                `Could not resolve a memory address from '${command.addressExpression}'.`
+            );
+        }
+
+        const byteCount = command.count * command.unitSize;
+        const memoryResponse = await this.dapRequest(session, 'readMemory', {
+            memoryReference,
+            count: byteCount
+        });
+        if (typeof memoryResponse?.data !== 'string') {
+            throw new Error('Debug adapter completed readMemory without returning data.');
+        }
+
+        const bytes = Buffer.from(memoryResponse.data, 'base64');
+        const address = memoryResponse.address || memoryReference;
+        const renderedBytes = [...bytes].map(byte => `0x${byte.toString(16).padStart(2, '0')}`).join(' ');
+        const unreadable = memoryResponse.unreadableBytes
+            ? ` (${memoryResponse.unreadableBytes} unreadable byte(s))`
+            : '';
+
+        return {
+            result: `${address}: ${renderedBytes}${unreadable}`,
+            type: 'memory',
+            variablesReference: 0
+        };
+    }
+
+    private static extractMemoryReference(value: unknown): string | undefined {
+        if (typeof value !== 'string') {
+            return undefined;
+        }
+
+        return value.match(/0x[0-9a-f]+/i)?.[0];
     }
 
 
@@ -605,6 +738,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Returns when one of the following happens:
      *  - 'stopped':    A stack frame is available (paused at breakpoint / entry / exception).
      *                  Subsequent calls (step, get_variables, evaluate) can act immediately.
+     *  - 'attached':   An `request: "attach"` session is live against an already-running process.
+     *                  This is a terminal success state on its own: attaching to a long-lived
+     *                  process (an app server, a daemon) neither stops nor terminates by itself,
+     *                  so waiting for a frame would burn the entire timeout on a healthy attach.
      *  - 'terminated': The session ended (program ran to completion without stopping).
      *  - 'no-session': No debug session ever started within the wait window.
      *  - 'timeout':    A session is running but never stopped or terminated in time.
@@ -615,7 +752,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public async waitForDebugSessionReady(
         timeoutMs: number
-    ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'> {
+    ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'> {
         // Helper: a session is only truly "stopped and actionable" when we have
         // a DebugStackFrame (frameId present). A bare DebugThread means a thread
         // is selected but the adapter hasn't published a frame yet — calling
@@ -632,10 +769,18 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         const subscriptions: vscode.Disposable[] = [];
         let trackedSession: vscode.DebugSession | undefined = vscode.debug.activeDebugSession;
 
+        // An attach session against an already-running process is ready the moment it is live.
+        const isAttachSession = (session: vscode.DebugSession | undefined) =>
+            session?.configuration?.request === 'attach';
+
+        if (isAttachSession(trackedSession)) {
+            return 'attached';
+        }
+
         try {
-            return await new Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>(resolve => {
+            return await new Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>(resolve => {
                 let settled = false;
-                const settle = (result: 'stopped' | 'terminated' | 'timeout' | 'no-session') => {
+                const settle = (result: 'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached') => {
                     if (settled) {
                         return;
                     }
@@ -653,6 +798,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     vscode.debug.onDidStartDebugSession(session => {
                         logger.info(`onDidStartDebugSession: ${session.name}`);
                         trackedSession = session;
+                        // Attaching to a long-lived process is already the success state - it
+                        // will not stop or terminate on its own, so don't wait for a frame.
+                        if (isAttachSession(session)) {
+                            settle('attached');
+                            return;
+                        }
                         setTimeout(() => {
                             if (isStoppedWithFrame()) {
                                 settle('stopped');

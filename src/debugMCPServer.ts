@@ -166,10 +166,11 @@ export class DebugMCPServer {
             // Surfaced to clients at `initialize`. Points agents at the
             // `debug-live` Agent Skill, which the extension installs into the
             // standard skills directories for harnesses that load skills.
-            instructions: 'These tools drive the VS Code debugger to investigate bugs, failing tests, ' +
-                'wrong/null values and other "it doesn\'t work" reports by stepping through code. ' +
-                'The companion "debug-live" Agent Skill describes the full interactive workflow: ' +
-                'when to set breakpoints, how to step and inspect state, and how to do root-cause analysis.',
+            instructions: 'These tools drive the debugger to investigate bugs, failing tests, ' +
+                'exceptions, crashes, hangs, wrong/null values, unexpected output, and other runtime problems. ' +
+                'To use these tools effectively, invoke the "debug-live" Agent Skill first; it provides the ' +
+                'investigation workflow using the debugger, including breakpoint strategy, step-and-inspect ' +
+                'pattern and root-cause guidance.',
         });
         this.setupTools(server, this.handlerFactory());
         return server;
@@ -205,9 +206,8 @@ export class DebugMCPServer {
     private setupTools(server: McpServer, debuggingHandler: IDebuggingHandler) {
         // Start debugging tool
         server.registerTool('start_debugging', {
-            description: 'Start a VS Code debug session for a source file, optionally for a single test method. ' +
-                'Use when investigating bugs, failing tests, wrong/null variable values, unexpected runtime behavior, ' +
-                'or any "it doesn\'t work" report. See the "debug-live" skill for the full investigation workflow.',
+            description: 'Start a VS Code debug session for a source file or for a single test method. ' +
+                'Invoke the "debug-live" skill first.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
@@ -313,7 +313,7 @@ export class DebugMCPServer {
 
         // Get variables tool
         server.registerTool('get_variables_values', {
-            description: 'Read the values of specific named variables at the current execution point.',
+            description: 'Read the values of specific named variables at the current execution point. Complex variables include descendant names and types only; use evaluate_expression with an exact descendant path to read that descendant value.',
             inputSchema: {
                 variableNames: z.array(z.string()).min(1).max(50)
                     .describe('Names of the variables to read, e.g. ["user", "response"]. Required - wildcards are not supported.'),
@@ -330,6 +330,16 @@ export class DebugMCPServer {
             },
         }, async (args: { expression: string }) =>
             this.runTool('evaluate_expression', () => debuggingHandler.handleEvaluateExpression(args)));
+
+        // Debug status tool (read-only; the safe way to ask "is it paused yet?")
+        server.registerTool('get_debug_status', {
+            description: 'Check whether the debuggee is currently paused at a breakpoint, and where. Read-only and safe to call at any time - it never pauses or resumes anything. Use it after triggering the code path under test instead of guessing, and pass waitForPauseSeconds to block until the breakpoint is actually hit. Returns status "paused", "running" or "no-session"; "running" is a normal answer, not an error.',
+            inputSchema: {
+                waitForPauseSeconds: z.number().int().min(0).max(600).optional()
+                    .describe('Block up to this many seconds waiting for the debuggee to hit a breakpoint, returning as soon as it does. Omit or 0 for an immediate snapshot. If it never pauses, the call still returns normally with status "running".'),
+            },
+        }, async (args: { waitForPauseSeconds?: number }) =>
+            this.runTool('get_debug_status', () => debuggingHandler.handleGetDebugStatus(args)));
     }
 
     /**

@@ -5,7 +5,14 @@ import { DebugConfigurationManager, IDebugConfigurationManager } from './utils/d
 import { DebugState } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { logger } from './utils/logger';
-import { redactExpressionResult, redactVariableValue, REDACTION_NOTICE } from './utils/secretRedaction';
+import {
+    isSensitiveExpression,
+    isSensitiveName,
+    redactExpressionResult,
+    redactVariableValue,
+    REDACTION_NOTICE,
+    REDACTION_PLACEHOLDER
+} from './utils/secretRedaction';
 
 /**
  * Interface for debugging handler operations
@@ -27,6 +34,24 @@ export interface IDebuggingHandler {
     handleGetVariables(args: { variableNames: string[]; scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleListVariableNames(args?: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
+    handleGetDebugStatus(args?: { waitForPauseSeconds?: number }): Promise<string>;
+}
+
+/**
+ * Render a debug state as a compact "file:line" for logs.
+ *
+ * A running (frameless) program has no location, which is a meaningful outcome
+ * rather than missing data - it is exactly what a successful continue against a
+ * server process looks like - so it gets its own label instead of "null:null".
+ */
+function describeLocation(state: DebugState): string {
+    if (!state.sessionActive) {
+        return '<session ended>';
+    }
+    if (!state.hasLocationInfo()) {
+        return '<running, no frame>';
+    }
+    return `${state.fileName}:${state.currentLine}`;
 }
 
 /**
@@ -111,6 +136,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 switch (readyState) {
                     case 'stopped':
                         return `Debug session stopped at breakpoint for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
+                    case 'attached':
+                        return `Debug session attached to the running process for: ${fileFullPath} using ${configDescription}${testInfo}. The process keeps running until a breakpoint is hit - add breakpoints, then exercise the process. Current state: ${currentState.toString()}`;
                     case 'terminated':
                         return `Debug session for ${fileFullPath} ran to completion without stopping (no breakpoint hit). Using ${configDescription}${testInfo}. Final state: ${currentState.toString()}`;
                     case 'no-session':
@@ -163,9 +190,23 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * Execute step over command(s)
+     * Run one navigation command (step/continue/pause) and wait for it to land.
+     *
+     * These five handlers were byte-for-byte identical apart from the executor
+     * call and the error prose, so they share one implementation. Crucially it
+     * is also the single place that logs navigation: without this, a step or a
+     * continue produced no log output whatsoever, and the only evidence that it
+     * worked was the tool's own return value - which is no use when the question
+     * being asked is whether that return value can be trusted.
+     *
+     * Each call logs where it started, where it landed, and how long it took, so
+     * a session can be reconstructed from DebugMCP.log alone.
      */
-    public async handleStepOver(args?: { steps?: number }): Promise<string> {
+    private async navigate(
+        operation: string,
+        run: () => Promise<void>,
+        settleOnResume = false
+    ): Promise<string> {
         try {
             if (!(await this.executor.hasActiveSession())) {
                 throw new Error('Debug session is not ready. Please wait for initialization to complete.');
@@ -173,85 +214,176 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             // Get the state before executing the command
             const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
+            logger.info(`${operation}: from ${describeLocation(beforeState)}`);
 
-            await this.executor.stepOver();
-            
-            // Wait for debugger state to change
-            const afterState = await this.waitForStateChange(beforeState);
+            const startedAt = Date.now();
+            await run();
+
+            // Wait for the debugger to leave its current stop. For a step that
+            // means the next frame; for a continue, "running again" is itself
+            // the terminal state (see waitForStateChange).
+            const afterState = await this.waitForStateChange(beforeState, settleOnResume);
+            const elapsedMs = Date.now() - startedAt;
+
+            logger.info(
+                `${operation}: landed at ${describeLocation(afterState)} in ${elapsedMs}ms ` +
+                    `(sessionActive=${afterState.sessionActive})`
+            );
 
             return afterState.toString();
         } catch (error) {
-            throw new Error(`Error executing step over: ${error}`);
+            logger.warn(`${operation}: failed - ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`Error executing ${operation}: ${error}`);
         }
+    }
+
+    /**
+     * Execute step over command(s)
+     */
+    public async handleStepOver(args?: { steps?: number }): Promise<string> {
+        return this.navigate('step over', () => this.executor.stepOver());
     }
 
     /**
      * Execute step into command
      */
     public async handleStepInto(): Promise<string> {
-        try {
-            if (!(await this.executor.hasActiveSession())) {
-                throw new Error('Debug session is not ready. Please wait for initialization to complete.');
-            }
-
-            // Get the state before executing the command
-            const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
-
-            await this.executor.stepInto();
-            
-            // Wait for debugger state to change
-            const afterState = await this.waitForStateChange(beforeState);
-            
-            return afterState.toString();
-        } catch (error) {
-            throw new Error(`Error executing step into: ${error}`);
-        }
+        return this.navigate('step into', () => this.executor.stepInto());
     }
 
     /**
      * Execute step out command
      */
     public async handleStepOut(): Promise<string> {
-        try {
-            if (!(await this.executor.hasActiveSession())) {
-                throw new Error('Debug session is not ready. Please wait for initialization to complete.');
-            }
-
-            // Get the state before executing the command
-            const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
-
-            await this.executor.stepOut();
-            
-            // Wait for debugger state to change
-            const afterState = await this.waitForStateChange(beforeState);
-            
-            return afterState.toString();
-        } catch (error) {
-            throw new Error(`Error executing step out: ${error}`);
-        }
+        return this.navigate('step out', () => this.executor.stepOut());
     }
 
     /**
      * Continue execution
      */
     public async handleContinue(): Promise<string> {
+        return this.navigate('continue', () => this.executor.continue(), true);
+    }
+
+    /**
+     * Report whether the debuggee is paused, optionally waiting for it to be.
+     *
+     * Without this there is no way to *ask* the question: callers had to infer
+     * it from `get_variables_values`/`evaluate_expression` failing with "No
+     * active stack frame", which conflates "still running" (fine, wait) with
+     * "session is broken" (not fine), and `pause_execution` is not an option
+     * because deliberately freezing a shared app pool to find out whether it
+     * was already frozen is not a read-only question.
+     *
+     * Never throws for a healthy session and never times out the tool call: not
+     * being paused is a legitimate answer, reported as `running`. When waiting,
+     * it returns the instant the breakpoint lands, so the usual "arm breakpoint
+     * then drive a request" sequence needs no polling and no sleep guesswork.
+     */
+    public async handleGetDebugStatus(args?: { waitForPauseSeconds?: number }): Promise<string> {
+        // Clamp to the configured operation timeout: the router's forward
+        // timeout and the tool backstop are both derived from it, so a longer
+        // wait here would be killed in transit and surface as a spurious
+        // "aborted" instead of the honest "still running".
+        const requestedSeconds = Math.max(0, args?.waitForPauseSeconds ?? 0);
+        const waitSeconds = Math.min(requestedSeconds, this.timeoutInSeconds);
         try {
             if (!(await this.executor.hasActiveSession())) {
-                throw new Error('Debug session is not ready. Please wait for initialization to complete.');
+                logger.info('debug status: no active session');
+                return JSON.stringify({ status: 'no-session', paused: false, sessionActive: false }, null, 2);
             }
 
-            // Get the state before executing the command
-            const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
+            const startedAt = Date.now();
+            let state = await this.executor.getCurrentDebugState(this.numNextLines);
+            if (waitSeconds > 0 && state.sessionActive && !state.hasLocationInfo()) {
+                state = await this.waitForPause(waitSeconds * 1000);
+            }
 
-            await this.executor.continue();
-            
-            // Wait for debugger state to change
-            const afterState = await this.waitForStateChange(beforeState);
-            
-            return afterState.toString();
+            const paused = state.sessionActive && state.hasLocationInfo();
+            logger.info(
+                `debug status: ${paused ? 'paused' : 'running'} at ${describeLocation(state)} ` +
+                    `after ${Date.now() - startedAt}ms (waited up to ${waitSeconds}s)`
+            );
+
+            // One envelope for every outcome: a machine consumer should not have
+            // to special-case the shape to find out whether it is paused.
+            return JSON.stringify(
+                {
+                    status: paused ? 'paused' : state.sessionActive ? 'running' : 'no-session',
+                    paused,
+                    sessionActive: state.sessionActive,
+                    configurationName: state.configurationName,
+                    breakpoints: state.breakpoints,
+                    requestedWaitSeconds: requestedSeconds,
+                    effectiveWaitSeconds: waitSeconds,
+                    state: paused ? JSON.parse(state.toString()) : undefined,
+                    hint: paused
+                        ? undefined
+                        : waitSeconds < requestedSeconds
+                          ? `The wait was clamped to the configured operation timeout of ${waitSeconds}s. The debuggee had not hit a breakpoint by then; call get_debug_status again to keep waiting.`
+                          : state.sessionActive
+                            ? 'The debuggee is running and has not hit a breakpoint. Trigger the code path, then call get_debug_status again with waitForPauseSeconds to block until it does.'
+                            : 'No debug session is active. Call start_debugging first.'
+                },
+                null,
+                2
+            );
         } catch (error) {
-            throw new Error(`Error executing continue: ${error}`);
+            logger.warn(`debug status: failed - ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`Error getting debug status: ${error}`);
         }
+    }
+
+    /**
+     * Resolve as soon as the debuggee stops, or after `timeoutMs` if it doesn't.
+     *
+     * A timeout here is an ordinary outcome ("still running"), not a failure, so
+     * it resolves with the current state rather than rejecting.
+     */
+    private async waitForPause(timeoutMs: number): Promise<DebugState> {
+        const subscriptions: vscode.Disposable[] = [];
+        try {
+            await new Promise<void>(resolve => {
+                let settled = false;
+                const settle = (reason: string) => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    logger.info(`waitForPause: settled on ${reason}`);
+                    clearTimeout(timer);
+                    resolve();
+                };
+
+                const timer = setTimeout(() => settle('timeout (still running)'), timeoutMs);
+
+                // Subscribe before the fast-path check so a stop landing during
+                // that async check cannot slip through unobserved.
+                subscriptions.push(
+                    vscode.debug.onDidChangeActiveStackItem(stackItem => {
+                        if (stackItem && 'frameId' in stackItem) {
+                            settle('breakpoint hit');
+                        }
+                    })
+                );
+                subscriptions.push(
+                    vscode.debug.onDidTerminateDebugSession(() => {
+                        if (!vscode.debug.activeDebugSession) {
+                            settle('session terminated');
+                        }
+                    })
+                );
+
+                void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
+                    if (!currentState.sessionActive || currentState.hasLocationInfo()) {
+                        settle('fast path');
+                    }
+                });
+            });
+        } finally {
+            subscriptions.forEach(d => d.dispose());
+        }
+        return this.executor.getCurrentDebugState(this.numNextLines);
     }
 
     /**
@@ -260,23 +392,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * (e.g. a busy loop or an embedded/bare-metal target that is running freely).
      */
     public async handlePause(): Promise<string> {
-        try {
-            if (!(await this.executor.hasActiveSession())) {
-                throw new Error('Debug session is not ready. Please wait for initialization to complete.');
-            }
-
-            // Get the state before executing the command
-            const beforeState = await this.executor.getCurrentDebugState(this.numNextLines);
-
-            await this.executor.pause();
-
-            // Wait for the debugger to stop (pause raises a 'stopped' event)
-            const afterState = await this.waitForStateChange(beforeState);
-
-            return afterState.toString();
-        } catch (error) {
-            throw new Error(`Error executing pause: ${error}`);
-        }
+        return this.navigate('pause', () => this.executor.pause());
     }
 
     /**
@@ -322,10 +438,33 @@ export class DebuggingHandler implements IDebuggingHandler {
             await this.executor.addBreakpoint(uri, line, condition);
 
             const conditionInfo = condition ? ` (condition: ${condition})` : '';
-            return `Breakpoint added at ${fileFullPath}:${line}${conditionInfo}`;
+            return `Breakpoint added at ${fileFullPath}:${line}${conditionInfo}${await this.sessionCaveat()}`;
         } catch (error) {
             throw new Error(`Error adding breakpoint: ${error}`);
         }
+    }
+
+    /**
+     * Warn when a breakpoint is registered with no debug session attached.
+     *
+     * VS Code accepts breakpoints with no session at all, so "Breakpoint added"
+     * reads as confirmation that debugging is live when it is not. The failure
+     * then surfaces much later, as an unrelated-looking error on the first
+     * inspection call, after the caller has already waited for a code path that
+     * was never going to pause.
+     */
+    private async sessionCaveat(): Promise<string> {
+        try {
+            if (await this.executor.hasActiveSession()) {
+                return '';
+            }
+        } catch {
+            return '';
+        }
+        return (
+            '\n\nWARNING: no debug session is currently active, so this breakpoint will not pause anything yet. ' +
+            'Call start_debugging first, then confirm with get_debug_status.'
+        );
     }
 
     /**
@@ -355,7 +494,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             await this.executor.addBreakpoint(uri, line, condition, logMessage);
 
             const conditionInfo = condition ? ` (condition: ${condition})` : '';
-            return `Logpoint added at ${fileFullPath}:${line}${conditionInfo}`;
+            return `Logpoint added at ${fileFullPath}:${line}${conditionInfo}${await this.sessionCaveat()}`;
         } catch (error) {
             throw new Error(`Error adding logpoint: ${error}`);
         }
@@ -427,6 +566,8 @@ export class DebuggingHandler implements IDebuggingHandler {
      * tool a targeted lookup rather than a scope dump by another name.
      */
     private readonly maxRequestedVariables: number = 50;
+    private readonly maxVariableExpansionDepth: number = 6;
+    private readonly maxExpandedFields: number = 100;
 
     /**
      * Resolve the frame to inspect, failing with an actionable message when the
@@ -515,6 +656,34 @@ export class DebuggingHandler implements IDebuggingHandler {
         return requestedNames.includes(DebuggingHandler.canonicalVariableName(variable));
     }
 
+    private static redactionVariableName(variable: any, canonicalName: string): string {
+        const displayName = typeof variable?.name === 'string' ? variable.name : canonicalName;
+        const canonicalMember = canonicalName.match(/(?:^|\.|->)([A-Za-z_][A-Za-z0-9_]*)$/);
+        if (canonicalMember) {
+            return canonicalMember[1];
+        }
+
+        const displayMember = displayName.match(/(?:^|\.|->)([A-Za-z_][A-Za-z0-9_]*)$/);
+        return displayMember?.[1] ?? displayName;
+    }
+
+    private static displayVariableType(variable: any): string | undefined {
+        if (typeof variable?.type !== 'string') {
+            return undefined;
+        }
+
+        // Cortex-Debug appends index and numeric renderings to scalar types:
+        // "uint8_t 0;\ndec: 70\nhex: 0x46...".
+        return variable.type.split(/\r?\n/, 1)[0].replace(/\s+\d+;$/, '').trim() || undefined;
+    }
+
+    private static isPointerLikeType(type: unknown): boolean {
+        if (typeof type !== 'string') {
+            return false;
+        }
+        return /[*&]\s*$/.test(type.split(/\r?\n/, 1)[0].trim());
+    }
+
     /**
      * List the variable names (and types) visible at the current execution
      * point, deliberately without any values, so an agent can discover what
@@ -576,6 +745,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             let variablesInfo = 'Variables:\n==========\n\n';
             let redactedAny = false;
             const foundNames = new Set<string>();
+            const expansionBudget = { remaining: this.maxExpandedFields };
 
             for (const scopeItem of variablesData.scopes) {
                 const matches = (scopeItem.variables || []).filter((variable: any) =>
@@ -599,14 +769,16 @@ export class DebuggingHandler implements IDebuggingHandler {
                         // then told that name was not found.
                         foundNames.add(variable.name);
                     }
-                    const result = redactVariableValue(name, variable.value);
-                    const value = result.value;
-                    redactedAny = redactedAny || result.redacted;
-                    variablesInfo += `  ${name}: ${value}`;
-                    if (variable.type) {
-                        variablesInfo += ` (${variable.type})`;
-                    }
-                    variablesInfo += '\n';
+                    const formatted = await this.formatVariableTree(
+                        variable,
+                        '  ',
+                        0,
+                        new Set<number>(),
+                        true,
+                        expansionBudget
+                    );
+                    variablesInfo += `${formatted.text}\n`;
+                    redactedAny = redactedAny || formatted.redacted;
                 }
                 variablesInfo += '\n';
             }
@@ -651,22 +823,152 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
-                const { value, redacted } = redactExpressionResult(expression, response.result);
+                const isComplex = response.variablesReference > 0 &&
+                    !DebuggingHandler.isPointerLikeType(response.type);
+                const expressionIsSensitive = isSensitiveExpression(expression);
+                const { value, redacted } = isComplex
+                    ? {
+                        value: expressionIsSensitive ? REDACTION_PLACEHOLDER : '<complex value>',
+                        redacted: expressionIsSensitive
+                    }
+                    : redactExpressionResult(expression, response.result);
                 resultText += `Result: ${value}`;
                 if (response.type) {
                     resultText += ` (${response.type})`;
+                }
+                if (!redacted && isComplex) {
+                    const children = await this.formatVariableChildren(
+                        response.variablesReference,
+                        '  ',
+                        1,
+                        new Set<number>(),
+                        { remaining: this.maxExpandedFields }
+                    );
+                    if (children.text) {
+                        resultText += `\n${children.text}`;
+                    }
+                    if (children.redacted) {
+                        resultText += `\n\n${REDACTION_NOTICE}`;
+                    }
                 }
                 if (redacted) {
                     resultText += `\n\n${REDACTION_NOTICE}`;
                 }
 
                 return resultText;
+            } else if (response && typeof response.output === 'string') {
+                if (response.output.trim().length > 0) {
+                    const { value, redacted } = redactExpressionResult(expression, response.output);
+                    return `Expression: ${expression}\nResult: ${value}` +
+                        (redacted ? `\n\n${REDACTION_NOTICE}` : '');
+                }
+                if (response.resultClass === 'done') {
+                    throw new Error(
+                        'The debug adapter reported success but returned no expression result or captured output.'
+                    );
+                }
+                throw new Error(
+                    `The debug adapter returned no expression result (resultClass: ${response.resultClass || 'unknown'}).`
+                );
             } else {
-                throw new Error('Failed to evaluate expression');
+                throw new Error('The debug adapter returned no expression result.');
             }
         } catch (error) {
             throw new Error(`Error evaluating expression: ${error}`);
         }
+    }
+
+    private async formatVariableTree(
+        variable: any,
+        indent: string,
+        depth: number,
+        visitedReferences: Set<number>,
+        includeValue: boolean,
+        expansionBudget: { remaining: number }
+    ): Promise<{ text: string; redacted: boolean }> {
+        const name = DebuggingHandler.canonicalVariableName(variable);
+        let text = `${indent}${name}`;
+        let redacted = false;
+        const variablesReference = Number(variable.variablesReference) || 0;
+        const isComplex = variablesReference > 0 &&
+            !DebuggingHandler.isPointerLikeType(variable.type);
+        if (includeValue && isComplex) {
+            const redactionName = DebuggingHandler.redactionVariableName(variable, name);
+            if (isSensitiveName(redactionName)) {
+                text += `: ${REDACTION_PLACEHOLDER}`;
+                redacted = true;
+            }
+        } else if (includeValue) {
+            const redactionName = DebuggingHandler.redactionVariableName(variable, name);
+            const result = redactVariableValue(redactionName, variable.value);
+            text += `: ${result.value}`;
+            redacted = result.redacted;
+        }
+        const type = DebuggingHandler.displayVariableType(variable);
+        if (type) {
+            text += ` (${type})`;
+        }
+
+        if (!redacted && isComplex) {
+            const children = await this.formatVariableChildren(
+                variablesReference,
+                `${indent}  `,
+                depth + 1,
+                visitedReferences,
+                expansionBudget
+            );
+            if (children.text) {
+                text += `\n${children.text}`;
+            }
+            return { text, redacted: children.redacted };
+        }
+
+        return { text, redacted };
+    }
+
+    private async formatVariableChildren(
+        variablesReference: number,
+        indent: string,
+        depth: number,
+        visitedReferences: Set<number>,
+        expansionBudget: { remaining: number }
+    ): Promise<{ text: string; redacted: boolean }> {
+        if (depth > this.maxVariableExpansionDepth) {
+            return { text: `${indent}<maximum expansion depth reached>`, redacted: false };
+        }
+        if (visitedReferences.has(variablesReference)) {
+            return { text: `${indent}<cyclic reference>`, redacted: false };
+        }
+
+        const nextVisited = new Set(visitedReferences);
+        nextVisited.add(variablesReference);
+        const children = await this.executor.getVariableChildren(variablesReference);
+        const rendered: string[] = [];
+        let redacted = false;
+        let renderedChildren = 0;
+
+        for (const child of children) {
+            if (expansionBudget.remaining === 0) {
+                break;
+            }
+            expansionBudget.remaining--;
+            renderedChildren++;
+            const formatted = await this.formatVariableTree(
+                child,
+                indent,
+                depth,
+                nextVisited,
+                false,
+                expansionBudget
+            );
+            rendered.push(formatted.text);
+            redacted = redacted || formatted.redacted;
+        }
+        if (children.length > renderedChildren) {
+            rendered.push(`${indent}<${children.length - renderedChildren} more child variable(s)>`);
+        }
+
+        return { text: rendered.join('\n'), redacted };
     }
 
     /**
@@ -699,8 +1001,15 @@ export class DebuggingHandler implements IDebuggingHandler {
      * termination) so it reacts the instant the step lands. A fast-path check
      * covers the case where the step already completed before we got here, and
      * a timeout bounds the no-event/never-stops case.
+     *
+     * `settleOnResume` (continue only) additionally treats "running again, no
+     * stack frame" as a terminal state. `hasStateChanged` deliberately reports
+     * paused -> running as "no change" so that a step isn't settled by the
+     * transient frameless moment mid-step; for a continue, though, that state
+     * is the successful outcome, and a process that keeps running (a server, an
+     * event loop) never produces the next frame the step path waits for.
      */
-    private async waitForStateChange(beforeState: DebugState): Promise<DebugState> {
+    private async waitForStateChange(beforeState: DebugState, settleOnResume = false): Promise<DebugState> {
         const timeoutMs = this.timeoutInSeconds * 1000;
         const subscriptions: vscode.Disposable[] = [];
         const operatingSession = this.executor.getActiveSession();
@@ -709,18 +1018,19 @@ export class DebuggingHandler implements IDebuggingHandler {
         try {
             await new Promise<void>(resolve => {
                 let settled = false;
-                const settle = () => {
+                const settle = (reason: string) => {
                     if (settled) {
                         return;
                     }
                     settled = true;
+                    logger.info(`waitForStateChange: settled on ${reason}`);
                     clearTimeout(timer);
                     resolve();
                 };
 
                 const timer = setTimeout(() => {
                     logger.info('State change detection timed out, returning current state');
-                    settle();
+                    settle('timeout');
                 }, timeoutMs);
 
                 // Register listeners BEFORE the fast-path check so a stop that
@@ -730,7 +1040,14 @@ export class DebuggingHandler implements IDebuggingHandler {
                         // A newly focused stack frame is the signal that the
                         // step/continue has landed at its next stop.
                         if (stackItem && 'frameId' in stackItem) {
-                            settle();
+                            settle('new stack frame');
+                        } else if (settleOnResume && !stackItem) {
+                            // Continue only: the active stack item being cleared
+                            // means the program resumed. That IS the terminal
+                            // state for a continue against a process that keeps
+                            // running (a server, an event loop) and will never
+                            // stop again on its own.
+                            settle('program resumed');
                         }
                     })
                 );
@@ -739,18 +1056,20 @@ export class DebuggingHandler implements IDebuggingHandler {
                         // continue/step that runs the program to completion.
                         if (operatingSession && session.id === operatingSession.id) {
                             operatingSessionTerminated = true;
-                            settle();
+                            settle('session terminated');
                         } else if (!vscode.debug.activeDebugSession) {
-                            settle();
+                            settle('no active session');
                         }
                     })
                 );
 
                 // Fast path: the step/continue may already have landed by the
-                // time we subscribed (e.g. a trivial single-line step).
+                // time we subscribed (e.g. a trivial single-line step), or the
+                // program may already be running again after a continue.
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive) {
-                        settle();
+                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasLocationInfo();
+                    if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive || resumed) {
+                        settle('fast path');
                     }
                 });
             });

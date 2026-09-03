@@ -4,6 +4,7 @@ import * as assert from 'assert';
 import {
     REDACTION_PLACEHOLDER,
     isSensitiveName,
+    isSensitiveExpression,
     looksLikeSecretValue,
     redactExpressionResult,
     redactVariableValue
@@ -153,6 +154,21 @@ suite('Secret redaction', () => {
     });
 
     suite('redactExpressionResult', () => {
+        test('recognizes a sensitive terminal member in a qualified expression', () => {
+            assert.strictEqual(isSensitiveExpression('customer.Credentials.Profile.Password'), true);
+            assert.strictEqual(isSensitiveExpression('customer.credentials.apiToken'), true);
+            assert.strictEqual(isSensitiveExpression('customer.Profile.Age'), false);
+        });
+
+        test('redacts qualified sensitive expressions by name', () => {
+            const result = redactExpressionResult(
+                'customer.Credentials.Profile.Password',
+                '"correct-horse-battery-staple"'
+            );
+            assert.strictEqual(result.value, REDACTION_PLACEHOLDER);
+            assert.strictEqual(result.redacted, true);
+        });
+
         test('blocks the evaluate_expression bypass for sensitive expressions', () => {
             const result = redactExpressionResult('os.environ["OPENAI_API_KEY"]', "'sk-abcdefghijklmnopqrst'");
             assert.strictEqual(result.redacted, true);

@@ -13,6 +13,8 @@ Debugging is inherently asynchronous - when you step over a line, the debugger t
 - Orchestrate debugging operations (start, stop, step, breakpoints)
 - Detect when debugger state has meaningfully changed after commands
 - Format debug state into human/AI-readable responses
+- Recursively format explicitly requested structs and arrays
+- Show descendant names and types when expanding complex values
 - Provide root cause analysis guidance to AI agents
 - Manage operation timeouts
 
@@ -78,10 +80,9 @@ which withholds credential-looking values by name (`api_key`, `password`, `token
 content (JWT, PEM private key, `AKIA…`, `ghp_…`, `Bearer …`, `Password=…`, …).
 `handleEvaluateExpression` is covered too, since evaluating `os.environ` is the trivial
 bypass for per-variable controls. Null-ish values are deliberately left intact so
-missing-credential bugs stay debuggable. The decision is made from the variable's own name
-and its own value only — a struct is never descended into, so a `config` object that happens
-to contain a `password` field is returned intact. Redaction is unconditional — there is no
-setting to disable it.
+missing-credential bugs stay debuggable.
+`handleGetVariables` and `handleEvaluateExpression` return the explicitly requested variable or expression's own result, but any expandable descendants are rendered as names and types only. A descendant value requires evaluating that exact path separately.
+Recursive expansion is bounded to 100 child fields total per response, shared across all nested branches and requested roots.
 
 ## Key Code Locations
 
@@ -102,3 +103,5 @@ setting to disable it.
 ## Error Handling
 
 All operations wrap errors with context about what operation failed, enabling AI agents to understand and potentially recover from failures.
+Expression evaluation also distinguishes an adapter error from a successful
+command whose result/output was not captured.

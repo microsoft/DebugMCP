@@ -118,6 +118,14 @@ export function isSensitiveName(name: string | undefined | null): boolean {
     return SENSITIVE_NAMES.has(normalizeName(name));
 }
 
+export function isSensitiveExpression(expression: string | undefined | null): boolean {
+    if (!expression) {
+        return false;
+    }
+    const identifiers = expression.match(/[A-Za-z_][A-Za-z0-9_-]*/g);
+    return identifiers !== null && isSensitiveName(identifiers[identifiers.length - 1]);
+}
+
 export function looksLikeSecretValue(value: string | undefined | null): boolean {
     if (!value) {
         return false;
@@ -168,7 +176,7 @@ export function redactExpressionResult(expression: string, value: unknown): { va
         return { value: text, redacted: false };
     }
 
-    if (isSensitiveName(expression)) {
+    if (isSensitiveExpression(expression)) {
         return { value: REDACTION_PLACEHOLDER, redacted: true };
     }
 

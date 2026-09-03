@@ -2,7 +2,7 @@
   "name": "debugmcpextension",
   "displayName": "DebugMCP — Agentic Debugging for VS Code, Cursor & More",
   "description": "Your AI agent debugs for you — right inside VS Code, Cursor & other VS Code-based editors. Let Copilot, Cline, Cursor, Codex & any MCP agent set breakpoints, step through code, and inspect variables live instead of guessing from logs.",
-  "version": "2.3.0",
+  "version": "2.3.3",
   "publisher": "ozzafar",
   "author": {
     "name": "Oz Zafar",
@@ -123,7 +123,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run bundle && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:skill-trigger-agent": "node scripts/test-debug-skill-trigger.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

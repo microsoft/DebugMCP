@@ -13,8 +13,13 @@ For AI agents to use DebugMCP, they need MCP server configuration in their setti
 - Detect supported AI agents and their config file paths
 - Show post-install popup for agent selection
 - Write MCP server configuration to agent settings files
+- Preserve existing JSON configuration files when they cannot be parsed
 - Handle cross-platform config path differences (Windows, macOS, Linux)
 - Track whether onboarding popup has been shown
+
+When an existing JSON configuration is malformed, setup leaves it unchanged and offers to
+open the file. The error also directs users to rerun **DebugMCP: Show Agent Selection
+Popup** from the Command Palette after correcting the JSON.
 
 ## Supported Agents
 
@@ -71,7 +76,7 @@ url = "http://localhost:3001/mcp"
 
 ### Popup State
 
-Uses VS Code's `globalState` to track whether the onboarding popup has been shown, preventing repeated prompts on every activation.
+Uses VS Code's `globalState` to track whether the onboarding popup has been shown or dismissed, preventing repeated prompts on every activation. Users can still reopen setup from the Command Palette.
 
 ### Skill delivery — standard skills directories
 
@@ -100,7 +105,7 @@ This fixes issue #105: earlier builds copied the skill next to each agent's conf
 3. If not, display multi-select dialog with supported agents
 4. For each selected agent, write/update config file
 5. Show success message with option to open config file
-6. Mark popup as shown
+6. Mark popup as shown after it is accepted or dismissed
 
 The bundled `debug-live` skill is installed into the standard skills directories (`~/.agents/skills/`, plus `~/.copilot/skills/` when present) during step 4, so every skills-compatible harness discovers it from one shared location.
 

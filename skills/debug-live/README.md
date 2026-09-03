@@ -61,3 +61,16 @@ You also need:
 2. The language extension for whatever you're debugging (Python, C# Dev Kit, Java
    Extension Pack, etc. — see the per-language reference for specifics).
 3. Your AI agent runtime configured to connect to that MCP endpoint.
+
+## Live trigger evaluation
+
+Run `npm run test:skill-trigger-agent` to launch a real Copilot CLI session and verify
+from its JSON tool events that `debug-live` is the first tool invoked for the default
+runtime-null scenario. This is an opt-in model evaluation: it requires an authenticated
+Copilot CLI, consumes AI credits, and may be nondeterministic.
+
+Pass a different prompt after `--`:
+
+```text
+npm run test:skill-trigger-agent -- "A runtime test hangs while processing a request"
+```

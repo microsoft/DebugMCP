@@ -33,6 +33,26 @@ export interface MCPServerConfig {
     tools?: string[];
 }
 
+export async function upsertJsonDebugMCPConfigFile(
+    configPath: string,
+    fieldName: string,
+    debugMCPConfig: MCPServerConfig
+): Promise<void> {
+    let config: any = {};
+
+    if (fs.existsSync(configPath)) {
+        const configContent = await fs.promises.readFile(configPath, 'utf8');
+        config = JSON.parse(configContent);
+    }
+
+    if (!config[fieldName]) {
+        config[fieldName] = {};
+    }
+
+    config[fieldName].debugmcp = debugMCPConfig;
+    await fs.promises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+}
+
 export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: string): string {
     const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
     const lines = normalizedConfigContent.split('\n');
@@ -528,34 +548,32 @@ export class AgentConfigurationManager {
                 return { success: true, skillPath };
             }
 
-            let config: any = {};
-            
-            // Read existing config if it exists
-            if (fs.existsSync(agent.configPath)) {
-                const configContent = await fs.promises.readFile(agent.configPath, 'utf8');
-                try {
-                    config = JSON.parse(configContent);
-                } catch (parseError) {
-                    console.warn(`Failed to parse existing config for ${agent.name}, creating new config`);
-                    config = {};
-                }
-            }
-
-            // Ensure the correct MCP servers object exists for this agent
             const fieldName = agent.mcpServerFieldName;
-            if (!config[fieldName]) {
-                config[fieldName] = {};
+            try {
+                await upsertJsonDebugMCPConfigFile(
+                    agent.configPath,
+                    fieldName,
+                    this.getDebugMCPConfig(agent)
+                );
+            } catch (error) {
+                if (!(error instanceof SyntaxError)) {
+                    throw error;
+                }
+
+                console.error(`Failed to parse existing config for ${agent.name}:`, error);
+                const openConfigButton = 'Open Config';
+                const result = await vscode.window.showErrorMessage(
+                    `Failed to configure DebugMCP for ${agent.displayName}: the existing configuration contains invalid JSON. ` +
+                    'Fix the JSON, then run "DebugMCP: Show Agent Selection Popup" from the Command Palette to retry setup.',
+                    openConfigButton
+                );
+
+                if (result === openConfigButton) {
+                    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agent.configPath));
+                }
+
+                return { success: false, skillPath: null };
             }
-
-            // Add or update DebugMCP configuration with current settings
-            config[fieldName].debugmcp = this.getDebugMCPConfig(agent);
-
-            // Write the updated config back to file
-            await fs.promises.writeFile(
-                agent.configPath, 
-                JSON.stringify(config, null, 2), 
-                'utf8'
-            );
 
             console.log(`Successfully added DebugMCP configuration to ${agent.name}`);
             const skillPath = await this.installDebugMCPSkill();
@@ -589,7 +607,10 @@ export class AgentConfigurationManager {
         quickPick.canSelectMany = true;
         quickPick.ignoreFocusOut = true;
 
+        let accepted = false;
+
         quickPick.onDidAccept(async () => {
+            accepted = true;
             const selectedItems = quickPick.selectedItems;
             quickPick.hide();
 
@@ -610,7 +631,12 @@ export class AgentConfigurationManager {
             await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
         });
 
-        quickPick.onDidHide(() => quickPick.dispose());
+        quickPick.onDidHide(async () => {
+            quickPick.dispose();
+            if (!accepted) {
+                await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
+            }
+        });
         quickPick.show();
     }
 

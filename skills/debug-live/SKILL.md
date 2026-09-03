@@ -1,6 +1,6 @@
 ---
 name: debug-live
-description: Drive an interactive VS Code debugger to investigate bugs, failing tests, wrong/null variable values, unexpected runtime behavior, and other "it doesn't work" reports. Use this skill whenever speculation about runtime behavior would be cheaper to *verify* by stepping through the code than to reason about. Pairs with the DebugMCP MCP server, which exposes the underlying breakpoint / step / inspect tools.
+description: Guides root-cause investigations with debugging capabilities by setting breakpoints, starting a debug session, stepping through execution, inspecting variables, and tracing symptoms back to their origin. Prefer it for runtime bugs, failing tests, exceptions, crashes, hangs, wrong/null values, and unexpected output when live inspection is practical. Use this skill instead of modifying source code with temporary logs, print statements, or console output.
 license: MIT
 allowed-tools:
   - add_breakpoint
@@ -34,15 +34,14 @@ analysis framework*, and *language-specific guidance* live here.
 
 ## When to invoke this skill
 
-Reach for this skill whenever you would otherwise *guess* at runtime behavior:
+Invoke this skill as the **first investigation step** whenever you would otherwise guess
+at runtime behavior:
 
 - Any reported bug, failing test, exception, or unexpected output.
 - A variable holds an unexpected `null` / `undefined` / wrong type / wrong value.
 - A function returns something the caller didn't expect.
 - A code path executes (or fails to execute) when you didn't predict it would.
 - You're about to read a large amount of code "trying to figure out what happens at runtime."
-
-If you can step through the code in a few tool calls, do that instead of speculating.
 
 ---
 
@@ -238,10 +237,30 @@ Each reference covers prerequisites (which VS Code extension to install), framew
 configuration (e.g. enabling `pytest` test discovery, building `.NET` projects before
 launch), and common pitfalls.
 
+### Multiple VS Code windows
+
+VS Code normally brings a window to the foreground when its debugger stops. If a breakpoint
+or step in one workspace interrupts work in another VS Code window, recommend these native
+VS Code settings:
+
+```json
+{
+  "debug.focusWindowOnBreak": false,
+  "debug.focusEditorOnBreak": false
+}
+```
+
+`debug.focusWindowOnBreak` prevents the debugged window from taking operating-system focus.
+The optional `debug.focusEditorOnBreak` setting also keeps focus out of the stopped source
+editor. Do not change either persistent setting without the user's approval.
+
 ---
 
 ## Things to avoid
 
+- ❌ **Adding temporary logs, print statements, or console output before debugging.**
+  Invoke this skill and inspect live state first. Use a debugger logpoint for non-breaking
+  observation.
 - ❌ **Speculating about runtime values when you could just inspect them.** That's what
   `get_variables_values` and `evaluate_expression` are for.
 - ❌ **Calling `start_debugging` without first setting a breakpoint.** The program will
