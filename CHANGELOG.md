@@ -4,6 +4,23 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.4] - 2026-09-03
+
+### Added
+- **`get_debug_status` tool** - reports whether the debuggee is paused, running, or inactive and can optionally wait for a breakpoint without changing execution state.
+
+### Changed
+- Debugger navigation now records clearer timing and location diagnostics, and hint-less operations can safely route to the sole registered VS Code window.
+- npm lockfiles no longer record registry-specific download URLs, improving portability across package registries.
+
+### Fixed
+- `start_debugging` now returns promptly after attaching to a long-lived process instead of waiting for a stop event that may never occur.
+- `continue_execution` now returns as soon as the debuggee resumes while step operations continue waiting for their next stack frame.
+- Fork pull requests no longer fail extension builds when the optional artifact-comment step lacks write permission.
+
+### Dependencies
+- Updated `@humanfs/node`, `@humanfs/core`, `fast-uri`, and `qs`.
+
 ## [2.3.0] - 2026-07-28
 
 ### Changed
