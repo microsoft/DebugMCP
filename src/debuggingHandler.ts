@@ -321,11 +321,15 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             const startedAt = Date.now();
             let state = await this.executor.getCurrentDebugState(this.numNextLines);
-            if (waitSeconds > 0 && state.sessionActive && !state.hasLocationInfo()) {
+            if (waitSeconds > 0 && state.sessionActive && !state.hasValidContext()) {
                 state = await this.waitForPause(waitSeconds * 1000);
             }
 
-            const paused = state.sessionActive && state.hasLocationInfo();
+            // A stopped DAP frame is actionable even when the adapter cannot
+            // map it to a local source file. rdbg, disassembly-only frames, and
+            // sourceReference-backed adapters may all provide frame/thread IDs
+            // while leaving file/line empty.
+            const paused = state.hasValidContext();
             logger.info(
                 `debug status: ${paused ? 'paused' : 'running'} at ${describeLocation(state)} ` +
                     `after ${Date.now() - startedAt}ms (waited up to ${waitSeconds}s)`
@@ -401,7 +405,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 );
 
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    if (!currentState.sessionActive || currentState.hasLocationInfo()) {
+                    if (!currentState.sessionActive || currentState.hasValidContext()) {
                         settle('fast path');
                     }
                 });
@@ -1119,7 +1123,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 // time we subscribed (e.g. a trivial single-line step), or the
                 // program may already be running again after a continue.
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasLocationInfo();
+                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasValidContext();
                     if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive || resumed) {
                         settle('fast path');
                     }
@@ -1143,7 +1147,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * Determine if the debugger state has meaningfully changed
      */
     private hasStateChanged(beforeState: DebugState, afterState: DebugState): boolean {
-        if (beforeState.hasLocationInfo() && !afterState.hasLocationInfo() && afterState.sessionActive) {
+        if (beforeState.hasValidContext() && !afterState.hasValidContext() && afterState.sessionActive) {
             return false;
         }
 
@@ -1151,35 +1155,47 @@ export class DebuggingHandler implements IDebuggingHandler {
         if (beforeState.sessionActive !== afterState.sessionActive) {
             return true;
         }
-        
+
         // If session is no longer active, that's a change
         if (!afterState.sessionActive) {
             return true;
         }
-        
-        // If either state lacks location info, compare what we can
-        if (!beforeState.hasLocationInfo() || !afterState.hasLocationInfo()) {
-            // If one has location info and the other doesn't, that's a change
-            return beforeState.hasLocationInfo() !== afterState.hasLocationInfo();
+
+        // A frame can be stopped and actionable without source information.
+        // Detect context arrival and frame changes independently from location.
+        if (beforeState.hasValidContext() !== afterState.hasValidContext()) {
+            return true;
         }
-        
+
+        if (beforeState.threadId !== afterState.threadId) {
+            return true;
+        }
+
+        if (beforeState.frameId !== afterState.frameId) {
+            return true;
+        }
+
+        if (beforeState.frameName !== afterState.frameName) {
+            return true;
+        }
+
+        if (beforeState.hasLocationInfo() !== afterState.hasLocationInfo()) {
+            return true;
+        }
+
+        // If neither state has a source location, context comparisons above are
+        // all that are available.
+        if (!beforeState.hasLocationInfo()) {
+            return false;
+        }
+
         // Compare file paths - if we moved to a different file, that's a change
         if (beforeState.fileFullPath !== afterState.fileFullPath) {
             return true;
         }
-        
+
         // Compare line numbers - if we moved to a different line, that's a change
         if (beforeState.currentLine !== afterState.currentLine) {
-            return true;
-        }
-        
-        // Compare frame names - if we moved to a different function/method, that's a change
-        if (beforeState.frameName !== afterState.frameName) {
-            return true;
-        }
-        
-        // Compare frame IDs - internal frame change
-        if (beforeState.frameId !== afterState.frameId) {
             return true;
         }
         

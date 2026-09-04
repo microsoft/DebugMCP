@@ -6,7 +6,7 @@ High-level orchestration layer that coordinates debugging operations between the
 
 ## Motivation
 
-Debugging is inherently asynchronous - when you step over a line, the debugger takes time to execute and update its state. AI agents need reliable feedback about when operations complete. `DebuggingHandler` bridges this gap by polling for state changes and returning meaningful responses.
+Debugging is inherently asynchronous - when you step over a line, the debugger takes time to execute and update its state. AI agents need reliable feedback about when operations complete. `DebuggingHandler` bridges this gap by reacting to debugger events, checking the current state, and returning meaningful responses.
 
 ## Responsibility
 
@@ -17,6 +17,7 @@ Debugging is inherently asynchronous - when you step over a line, the debugger t
 - Show descendant names and types when expanding complex values
 - Provide root cause analysis guidance to AI agents
 - Manage operation timeouts
+- Report paused execution even when an adapter cannot provide a local source location
 
 ## Architecture Position
 
@@ -43,12 +44,14 @@ Debugging is inherently asynchronous - when you step over a line, the debugger t
 After executing a debug command (step over, continue, etc.), the handler:
 1. Captures "before" state
 2. Executes the command via executor
-3. Polls for state changes using exponential backoff
+3. Waits for stack-frame, resume, or termination events, with a current-state fast path
 4. Returns the "after" state when a meaningful change is detected
 
-### Exponential Backoff
+### Bounded waits
 
-Polling starts at 1 second intervals and increases exponentially (capped at 10 seconds for session activation, 1 second for state changes). Jitter is added to prevent thundering herd issues.
+Every wait is bounded by the configured operation timeout. A state that is
+already observable returns immediately, while a healthy debuggee that remains
+running is reported as such instead of surfacing a tool timeout.
 
 ### Meaningful State Changes
 
@@ -58,6 +61,12 @@ A state change is considered meaningful when any of these change:
 - Current line number
 - Frame name (function/method)
 - Frame ID
+
+Paused state is identified by an active frame/thread execution context, not by
+file and line metadata. Some adapters, including rdbg, can expose an actionable
+stopped frame while its source path is unavailable. Source location enriches the
+response but is not required for status reporting, variable inspection, or
+navigation state transitions.
 
 ### Ruby test entry pause
 
