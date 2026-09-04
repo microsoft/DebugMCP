@@ -16,6 +16,7 @@ allowed-tools:
   - step_out
   - continue_execution
   - pause_execution
+  - get_debug_status
   - list_variable_names
   - get_variables_values
   - evaluate_expression

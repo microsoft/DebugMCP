@@ -89,6 +89,11 @@ bundle exec rdbg -O -n -c -- bin/rails server
 Then pass `configurationName: "Attach to Ruby"` to `start_debugging`. Keep the debugger endpoint local unless the
 project has an explicit, secured remote-debugging setup.
 
+`start_debugging` returns as soon as the Ruby attach succeeds; it does not wait for a later request or job to hit the
+breakpoint. Trigger that work after the attach result, then call `get_debug_status` with `waitForPauseSeconds` to wait
+for the Ruby breakpoint without polling or interrupting the server with `pause_execution`. Inspect values only after
+the returned status is `paused`.
+
 ## Inspecting Ruby values
 
 - Call `list_variable_names` first, then request only the needed locals with `get_variables_values`.
