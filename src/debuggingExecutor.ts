@@ -129,7 +129,7 @@ export interface IDebuggingExecutor {
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
-    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>;
+    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
 }
 
 /**
@@ -985,6 +985,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Returns when one of the following happens:
      *  - 'stopped':    A stack frame is available (paused at breakpoint / entry / exception).
      *                  Subsequent calls (step, get_variables, evaluate) can act immediately.
+     *  - 'attached':   An `request: "attach"` session is live against an already-running process.
+     *                  This is a terminal success state on its own: attaching to a long-lived
+     *                  process (an app server, a daemon) neither stops nor terminates by itself,
+     *                  so waiting for a frame would burn the entire timeout on a healthy attach.
      *  - 'terminated': The session ended (program ran to completion without stopping).
      *  - 'no-session': No debug session ever started within the wait window.
      *  - 'timeout':    A session is running but never stopped or terminated in time.
@@ -995,7 +999,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public async waitForDebugSessionReady(
         timeoutMs: number
-    ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'> {
+    ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'> {
         // Helper: a session is only truly "stopped and actionable" when we have
         // a DebugStackFrame (frameId present). A bare DebugThread means a thread
         // is selected but the adapter hasn't published a frame yet — calling
@@ -1012,10 +1016,18 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         const subscriptions: vscode.Disposable[] = [];
         let trackedSession: vscode.DebugSession | undefined = vscode.debug.activeDebugSession;
 
+        // An attach session against an already-running process is ready the moment it is live.
+        const isAttachSession = (session: vscode.DebugSession | undefined) =>
+            session?.configuration?.request === 'attach';
+
+        if (isAttachSession(trackedSession)) {
+            return 'attached';
+        }
+
         try {
-            return await new Promise<'stopped' | 'terminated' | 'timeout' | 'no-session'>(resolve => {
+            return await new Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>(resolve => {
                 let settled = false;
-                const settle = (result: 'stopped' | 'terminated' | 'timeout' | 'no-session') => {
+                const settle = (result: 'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached') => {
                     if (settled) {
                         return;
                     }
@@ -1033,6 +1045,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     vscode.debug.onDidStartDebugSession(session => {
                         logger.info(`onDidStartDebugSession: ${session.name}`);
                         trackedSession = session;
+                        // Attaching to a long-lived process is already the success state - it
+                        // will not stop or terminate on its own, so don't wait for a frame.
+                        if (isAttachSession(session)) {
+                            settle('attached');
+                            return;
+                        }
                         setTimeout(() => {
                             if (isStoppedWithFrame()) {
                                 settle('stopped');

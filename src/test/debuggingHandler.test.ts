@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { DebugState } from '../debugState';
 import { DebuggingHandler } from '../debuggingHandler';
 import { IDebuggingExecutor } from '../debuggingExecutor';
@@ -203,5 +206,221 @@ suite('DebuggingHandler waitForStateChange (event-driven)', () => {
         // bounded by it (not hang).
         assert.ok(elapsed >= 200, `should wait for the ~300ms timeout, only took ${elapsed}ms`);
         assert.ok(elapsed < 3000, `timeout should bound the wait, took ${elapsed}ms`);
+    });
+});
+
+/**
+ * Regression tests for continue against a process that resumes and keeps
+ * running (a server, an event loop) rather than stopping again.
+ *
+ * hasStateChanged deliberately reports paused -> running as "no change", so
+ * that a step isn't settled by the transient frameless moment mid-step. Before
+ * the fix, handleContinue reused those step semantics and waited for a next
+ * frame that never arrives, burning the full timeout on a successful continue.
+ */
+suite('DebuggingHandler continue on a never-stopping process', () => {
+
+    function pausedState(line: number): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        s.updateLocation('/test/file.js', 'file.js', line, 'let v = 1;', []);
+        s.updateContext(1, 1);
+        s.updateFrameName('main');
+        return s;
+    }
+
+    // Session alive, but no stack frame: the program is running.
+    function runningState(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        return s;
+    }
+
+    function makeExecutor(getState: (call: number) => DebugState): IDebuggingExecutor {
+        let call = 0;
+        return {
+            startDebugging: async () => true,
+            debugTestAtCursor: async () => ({ started: true, runComplete: new Promise<void>(() => { /* pending */ }) }),
+            stopDebugging: async () => { /* noop */ },
+            stepOver: async () => { /* noop */ },
+            stepInto: async () => { /* noop */ },
+            stepOut: async () => { /* noop */ },
+            continue: async () => { /* noop */ },
+            pause: async () => { /* noop */ },
+            restart: async () => { /* noop */ },
+            addBreakpoint: async () => { /* noop */ },
+            removeBreakpoint: async () => { /* noop */ },
+            getCurrentDebugState: async () => getState(call++),
+            getVariables: async () => ({}),
+            getVariableChildren: async () => [],
+            evaluateExpression: async () => ({}),
+            getBreakpoints: () => [],
+            clearAllBreakpoints: () => { /* noop */ },
+            hasActiveSession: async () => true,
+            getActiveSession: () => undefined,
+            waitForDebugSessionReady: async () => 'no-session'
+        };
+    }
+
+    test('continue returns promptly once the program is running again', async () => {
+        // call 0 = paused at a breakpoint; afterwards = running, no frame.
+        const executor = makeExecutor(call => (call === 0 ? pausedState(10) : runningState()));
+        // 30s timeout: without the fix this waits it out and the test fails on latency.
+        const handler = new DebuggingHandler(executor, {} as any, 30);
+
+        const started = Date.now();
+        await handler.handleContinue();
+        const elapsed = Date.now() - started;
+
+        assert.ok(elapsed < 2000, 'continue should resolve as soon as the program resumes, took ' + elapsed + 'ms');
+    });
+
+    test('step still waits for the next frame rather than settling on the resume', async () => {
+        // Same state sequence, but stepping must NOT treat "running" as arrival,
+        // otherwise a step would return a frameless state mid-step.
+        const executor = makeExecutor(call => (call === 0 ? pausedState(10) : runningState()));
+        const handler = new DebuggingHandler(executor, {} as any, 0.3);
+
+        const started = Date.now();
+        await handler.handleStepOver();
+        const elapsed = Date.now() - started;
+
+        assert.ok(elapsed >= 200, 'step should wait for its next frame, only took ' + elapsed + 'ms');
+    });
+});
+
+suite('DebuggingHandler get_debug_status', () => {
+
+    function pausedState(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        s.updateLocation('/test/file.js', 'file.js', 42, 'let v = 1;', []);
+        s.updateContext(1, 1);
+        s.updateFrameName('main');
+        return s;
+    }
+
+    function runningState(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        return s;
+    }
+
+    function makeExecutor(state: DebugState, hasSession = true): IDebuggingExecutor {
+        return {
+            startDebugging: async () => true,
+            debugTestAtCursor: async () => ({ started: true, runComplete: Promise.resolve() }),
+            stopDebugging: async () => { /* noop */ },
+            stepOver: async () => { /* noop */ },
+            stepInto: async () => { /* noop */ },
+            stepOut: async () => { /* noop */ },
+            continue: async () => { /* noop */ },
+            pause: async () => { /* noop */ },
+            restart: async () => { /* noop */ },
+            addBreakpoint: async () => { /* noop */ },
+            removeBreakpoint: async () => { /* noop */ },
+            getCurrentDebugState: async () => state,
+            getVariables: async () => ({}),
+            getVariableChildren: async () => [],
+            evaluateExpression: async () => ({}),
+            getBreakpoints: () => [],
+            clearAllBreakpoints: () => { /* noop */ },
+            hasActiveSession: async () => hasSession,
+            getActiveSession: () => undefined,
+            waitForDebugSessionReady: async () => 'no-session'
+        } as unknown as IDebuggingExecutor;
+    }
+
+    test('reports paused with the current location', async () => {
+        const handler = new DebuggingHandler(makeExecutor(pausedState()), {} as any, 30);
+        const result = JSON.parse(await handler.handleGetDebugStatus());
+
+        assert.strictEqual(result.status, 'paused');
+        assert.strictEqual(result.paused, true);
+        assert.strictEqual(result.state.currentLine, 42);
+        assert.strictEqual(result.state.fileName, 'file.js');
+    });
+
+    test('reports running without waiting and without throwing', async () => {
+        const handler = new DebuggingHandler(makeExecutor(runningState()), {} as any, 30);
+
+        const started = Date.now();
+        const result = JSON.parse(await handler.handleGetDebugStatus());
+        const elapsed = Date.now() - started;
+
+        assert.strictEqual(result.status, 'running');
+        assert.strictEqual(result.paused, false);
+        assert.ok(elapsed < 1000, 'a snapshot must not wait, took ' + elapsed + 'ms');
+    });
+
+    test('a wait that never sees a pause still returns normally, not an error', async () => {
+        // "Still running" is a legitimate answer; it must never surface as a
+        // tool timeout, which is what callers previously had to interpret.
+        const handler = new DebuggingHandler(makeExecutor(runningState()), {} as any, 30);
+
+        const started = Date.now();
+        const result = JSON.parse(await handler.handleGetDebugStatus({ waitForPauseSeconds: 1 }));
+        const elapsed = Date.now() - started;
+
+        assert.strictEqual(result.status, 'running');
+        assert.ok(elapsed >= 900, 'should have waited the requested second, took ' + elapsed + 'ms');
+        assert.ok(elapsed < 5000, 'should return right after the wait, took ' + elapsed + 'ms');
+    });
+
+    test('already-paused session returns immediately even when a wait is requested', async () => {
+        const handler = new DebuggingHandler(makeExecutor(pausedState()), {} as any, 30);
+
+        const started = Date.now();
+        const result = JSON.parse(await handler.handleGetDebugStatus({ waitForPauseSeconds: 30 }));
+        const elapsed = Date.now() - started;
+
+        assert.strictEqual(result.status, 'paused');
+        assert.ok(elapsed < 1000, 'must not wait when already paused, took ' + elapsed + 'ms');
+    });
+
+    test('reports no-session instead of failing when nothing is attached', async () => {
+        const handler = new DebuggingHandler(makeExecutor(runningState(), false), {} as any, 30);
+        const result = JSON.parse(await handler.handleGetDebugStatus());
+
+        assert.strictEqual(result.status, 'no-session');
+        assert.strictEqual(result.paused, false);
+    });
+});
+
+suite('DebuggingHandler add_breakpoint session caveat', () => {
+
+    const tmpFile = path.join(os.tmpdir(), `debugmcp-bp-caveat-${process.pid}.js`);
+
+    suiteSetup(() => {
+        fs.writeFileSync(tmpFile, 'let a = 1;\nlet b = 2;\nlet c = 3;\n', 'utf8');
+    });
+
+    suiteTeardown(() => {
+        fs.rmSync(tmpFile, { force: true });
+    });
+
+    function makeExecutor(hasSession: boolean): IDebuggingExecutor {
+        return {
+            addBreakpoint: async () => { /* noop */ },
+            hasActiveSession: async () => hasSession
+        } as unknown as IDebuggingExecutor;
+    }
+
+    test('warns that a breakpoint will not pause anything when no session is attached', async () => {
+        // VS Code accepts breakpoints with no debug session, so a bare
+        // "Breakpoint added" reads as proof the debugger is live when it isn't.
+        const handler = new DebuggingHandler(makeExecutor(false), {} as any, 30);
+        const result = await handler.handleAddBreakpoint({ fileFullPath: tmpFile, line: 2 });
+
+        assert.ok(result.includes('Breakpoint added'), result);
+        assert.match(result, /no debug session is currently active/i);
+    });
+
+    test('stays quiet when a session is attached', async () => {
+        const handler = new DebuggingHandler(makeExecutor(true), {} as any, 30);
+        const result = await handler.handleAddBreakpoint({ fileFullPath: tmpFile, line: 2 });
+
+        assert.ok(result.includes('Breakpoint added'), result);
+        assert.doesNotMatch(result, /WARNING/i);
     });
 });
