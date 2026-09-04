@@ -119,7 +119,8 @@ const LANGUAGES: LangCase[] = [
     { label: 'Java',       file: '/repo/src/App.java',        debuggerType: 'java'     },
     { label: 'C#',         file: '/repo/src/AppTests.cs',     debuggerType: 'coreclr'  },
     { label: 'C++',        file: '/repo/src/app.cpp',         debuggerType: 'cppdbg'   },
-    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       }
+    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       },
+    { label: 'Ruby',       file: '/repo/src/app.rb',          debuggerType: 'ruby_lsp' }
 ];
 
 suite('handleStartDebugging regression matrix', () => {
@@ -308,6 +309,47 @@ suite('handleStartDebugging regression matrix', () => {
 
         const result = await pending;
         assert.match(result, /stopped at breakpoint/);
+    });
+
+    test('[Ruby] test path continues past the rdbg entry pause to the configured breakpoint', async () => {
+        const entryState = new DebugState();
+        entryState.sessionActive = true;
+        entryState.fileName = 'example_spec.rb';
+        entryState.currentLine = 5;
+        entryState.breakpoints = ['example_spec.rb:12'];
+
+        const breakpointState = entryState.clone();
+        breakpointState.currentLine = 12;
+
+        const runComplete = deferred<void>();
+        const { executor, configManager } = makeMocks({
+            testDispatch: { started: true, runComplete: runComplete.promise },
+            language: 'ruby_lsp'
+        });
+        let readinessChecks = 0;
+        let stateReads = 0;
+        let continueCalls = 0;
+        executor.waitForDebugSessionReady = async () => {
+            readinessChecks++;
+            return 'stopped';
+        };
+        executor.getCurrentDebugState = async () =>
+            stateReads++ === 0 ? entryState : breakpointState;
+        executor.getActiveSession = () => ({ type: 'ruby_lsp' }) as vscode.DebugSession;
+        executor.continue = async () => {
+            continueCalls++;
+        };
+
+        const result = await new DebuggingHandler(executor, configManager, 30).handleStartDebugging({
+            fileFullPath: '/repo/example_spec.rb',
+            workingDirectory: '/repo',
+            testName: 'returns the result'
+        });
+
+        assert.match(result, /"currentLine": 12/);
+        assert.strictEqual(continueCalls, 1);
+        assert.strictEqual(readinessChecks, 2);
+        runComplete.resolve();
     });
 
     // Attaching to a long-lived process (an app server, a daemon) neither stops nor

@@ -6,7 +6,8 @@ import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
 
 /**
- * Outcome of dispatching `testing.debugAtCursor`.
+ * Outcome of dispatching a test debugger through the RSpec CodeLens or
+ * `testing.debugAtCursor`.
  *
  * `started` indicates the command was dispatched successfully.
  * `runComplete` resolves when the underlying test run *finishes* (pass, fail,
@@ -18,6 +19,91 @@ import { withTimeout } from './utils/withTimeout';
 export interface TestDebugDispatch {
     started: boolean;
     runComplete: Promise<void>;
+    description?: string;
+}
+
+export interface VariableChildrenOptions {
+    indexedVariables?: number;
+}
+
+interface PositionedTest {
+    uri: vscode.Uri;
+    codeLensTarget: vscode.Position;
+    target: vscode.Position;
+}
+
+export function findDebugCodeLens(
+    codeLenses: readonly vscode.CodeLens[],
+    target: vscode.Position,
+    testName?: string
+): vscode.CodeLens | undefined {
+    const debuggerCodeLenses = codeLenses.filter(codeLens =>
+        codeLens.command && /debug/i.test(codeLens.command.command)
+    );
+    const namedCodeLenses = testName
+        ? debuggerCodeLenses.filter(codeLens => codeLensCommandMatchesTest(codeLens.command, testName))
+        : [];
+    const containingCodeLenses = debuggerCodeLenses.filter(codeLens => codeLens.range.contains(target));
+    const sameLineCodeLenses = debuggerCodeLenses.filter(codeLens => codeLens.range.start.line === target.line);
+    const candidates = namedCodeLenses.length > 0
+        ? namedCodeLenses
+        : containingCodeLenses.length > 0
+            ? containingCodeLenses
+            : sameLineCodeLenses;
+
+    return candidates
+        .sort((left, right) => rangeWeight(left.range) - rangeWeight(right.range))[0];
+}
+
+export function addRubyRspecProgram(
+    command: vscode.Command,
+    fileFullPath: string,
+    line: number,
+    rspecCommand: string
+): vscode.Command {
+    const existingProgram = command.arguments?.[2];
+    if (
+        command.command !== 'rubyLsp.debugTest' ||
+        !fileFullPath.endsWith('_spec.rb') ||
+        (typeof existingProgram === 'string' && existingProgram.trim().length > 0)
+    ) {
+        return command;
+    }
+
+    const args = [ ...(command.arguments ?? []) ];
+    while (args.length < 2) {
+        args.push(undefined);
+    }
+    args[2] = `${rspecCommand} ${fileFullPath}:${line}`;
+    return { ...command, arguments: args };
+}
+
+export function rubyRspecDebugConfiguration(program: string): vscode.DebugConfiguration {
+    return {
+        type: 'ruby_lsp',
+        name: 'Debug',
+        request: 'launch',
+        program,
+        env: { DISABLE_SPRING: '1' }
+    };
+}
+
+export function shouldUseDebuggerCodeLens(fileFullPath: string): boolean {
+    return fileFullPath.endsWith('_spec.rb');
+}
+
+function codeLensCommandMatchesTest(command: vscode.Command | undefined, testName: string): boolean {
+    return command?.arguments?.some(argument =>
+        typeof argument === 'string' && (argument === testName || argument.endsWith(testName))
+    ) ?? false;
+}
+
+function rangeWeight(range: vscode.Range): number {
+    const lineSpan = range.end.line - range.start.line;
+    const characterSpan = lineSpan === 0
+        ? range.end.character - range.start.character
+        : range.end.character + range.start.character;
+    return lineSpan * 1_000_000 + characterSpan;
 }
 
 /**
@@ -37,7 +123,7 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
-    getVariableChildren(variablesReference: number): Promise<any[]>;
+    getVariableChildren(variablesReference: number, options?: VariableChildrenOptions): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
@@ -90,7 +176,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * Debug a single test by routing through VS Code's Testing API.
+     * Debug a single RSpec example through its debugger CodeLens. Preserve the
+     * original VS Code Testing API path for every other language and test type.
      *
      * Works for any language whose extension registers a TestController
      * (Python, Jest/Mocha, JUnit, C# Dev Kit, Go, Rust, ...). This is the
@@ -101,7 +188,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Implementation strategy:
      *  1. Open the file in an editor.
      *  2. Place the cursor on the test method's definition line.
-     *  3. Execute the built-in `testing.debugAtCursor` command.
+     *  3. For `*_spec.rb`, execute the narrowest matching debugger CodeLens.
+     *  4. Otherwise execute the built-in `testing.debugAtCursor` command.
      *
      * The handler's existing readiness wait picks up the resulting session.
      */
@@ -112,6 +200,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 `Could not locate test '${testName}' in ${fileFullPath}. ` +
                 `Check the test name, or pass a launch.json configurationName instead.`
             );
+        }
+
+        if (shouldUseDebuggerCodeLens(fileFullPath)) {
+            const codeLensDispatch = await this.debugTestWithCodeLens(positioned, testName);
+            if (codeLensDispatch) {
+                return codeLensDispatch;
+            }
         }
 
         // Trigger test discovery before dispatching. Some controllers (notably
@@ -138,7 +233,148 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             .catch(err => {
                 logger.error(`testing.debugAtCursor failed: ${err}`);
             });
-        return { started: true, runComplete };
+        return { started: true, runComplete, description: 'testing.debugAtCursor' };
+    }
+
+    private async debugTestWithCodeLens(
+        positioned: PositionedTest,
+        testName: string
+    ): Promise<TestDebugDispatch | undefined> {
+        let codeLenses: vscode.CodeLens[] | undefined;
+        try {
+            codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                'vscode.executeCodeLensProvider',
+                positioned.uri,
+                1_000
+            );
+        } catch {
+            return undefined;
+        }
+
+        const codeLens = findDebugCodeLens(codeLenses ?? [], positioned.codeLensTarget, testName);
+        if (!codeLens?.command) {
+            logger.info(
+                `No debugger CodeLens found for test '${testName}'; ` +
+                `the provider returned ${codeLenses?.length ?? 0} CodeLenses.`
+            );
+            return undefined;
+        }
+
+        let command = codeLens.command;
+        if (command.command === 'rubyLsp.debugTest' && positioned.uri.fsPath.endsWith('_spec.rb')) {
+            command = addRubyRspecProgram(
+                command,
+                positioned.uri.fsPath,
+                codeLens.range.start.line + 1,
+                await this.rubyLspRspecCommand(positioned.uri)
+            );
+        }
+        const editor = vscode.window.activeTextEditor;
+        if (editor?.document.uri.toString() === positioned.uri.toString()) {
+            // Older CodeLens providers may resolve their command from the active
+            // line. Modern Ruby LSP receives the exact program directly below;
+            // the body line remains reserved for testing.debugAtCursor fallback.
+            const selection = new vscode.Selection(codeLens.range.start, codeLens.range.start);
+            editor.selection = selection;
+            editor.revealRange(selection, vscode.TextEditorRevealType.InCenter);
+        }
+
+        const rubyRspecProgram = command.command === 'rubyLsp.debugTest'
+            ? command.arguments?.[2]
+            : undefined;
+        if (typeof rubyRspecProgram === 'string' && rubyRspecProgram.length > 0) {
+            logger.info(`Starting exact Ruby RSpec debugger: ${rubyRspecProgram}`);
+            return this.startRubyRspecDebug(positioned.uri, rubyRspecProgram);
+        }
+
+        logger.info(`Dispatching test debugger through CodeLens command ${command.command}`);
+
+        // A CodeLens command may resolve only after the entire test run, so do
+        // not await it here before the debugger reaches its first stop.
+        const runComplete = Promise.resolve(
+            vscode.commands.executeCommand(command.command, ...(command.arguments ?? []))
+        )
+            .then(() => undefined)
+            .catch(err => {
+                logger.error(`Debugger CodeLens command ${command.command} failed: ${err}`);
+            });
+
+        return { started: true, runComplete, description: 'debugger CodeLens' };
+    }
+
+    private async startRubyRspecDebug(uri: vscode.Uri, program: string): Promise<TestDebugDispatch> {
+        let targetSessionId: string | undefined;
+        let resolveComplete: (() => void) | undefined;
+        const runComplete = new Promise<void>(resolve => {
+            resolveComplete = resolve;
+        });
+        const matches = (session: vscode.DebugSession) =>
+            session.type === 'ruby_lsp' && session.configuration.program === program;
+        const startSubscription = vscode.debug.onDidStartDebugSession(session => {
+            if (matches(session)) {
+                targetSessionId = session.id;
+            }
+        });
+        const terminateSubscription = vscode.debug.onDidTerminateDebugSession(session => {
+            if (session.id === targetSessionId) {
+                cleanup();
+                resolveComplete?.();
+            }
+        });
+        const cleanup = () => {
+            startSubscription.dispose();
+            terminateSubscription.dispose();
+        };
+
+        try {
+            const started = await vscode.debug.startDebugging(
+                vscode.workspace.getWorkspaceFolder(uri),
+                rubyRspecDebugConfiguration(program)
+            );
+            if (!started) {
+                cleanup();
+                throw new Error(`Failed to start exact RSpec debugging for ${program}`);
+            }
+
+            if (!targetSessionId && vscode.debug.activeDebugSession && matches(vscode.debug.activeDebugSession)) {
+                targetSessionId = vscode.debug.activeDebugSession.id;
+            }
+            return { started: true, runComplete, description: 'debugger CodeLens' };
+        } catch (error) {
+            cleanup();
+            throw error;
+        }
+    }
+
+    private async rubyLspRspecCommand(uri: vscode.Uri): Promise<string> {
+        const addonSettings = vscode.workspace
+            .getConfiguration('rubyLsp', uri)
+            .get<Record<string, { rspecCommand?: unknown }>>('addonSettings');
+        const configuredCommand = addonSettings?.['Ruby LSP RSpec']?.rspecCommand;
+        if (typeof configuredCommand === 'string' && configuredCommand.trim().length > 0) {
+            return configuredCommand;
+        }
+
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+        if (!workspaceFolder) {
+            return 'bundle exec rspec';
+        }
+
+        const binstub = await this.uriExists(vscode.Uri.joinPath(workspaceFolder.uri, 'bin', 'rspec'))
+            ? 'bin/rspec'
+            : 'rspec';
+        return await this.uriExists(vscode.Uri.joinPath(workspaceFolder.uri, 'Gemfile'))
+            ? `bundle exec ${binstub}`
+            : binstub;
+    }
+
+    private async uriExists(uri: vscode.Uri): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(uri);
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     /**
@@ -157,7 +393,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * showTextDocument so it's applied atomically with the open — separate
      * `editor.selection = ...` writes race testing.debugAtCursor.
      */
-    private async positionCursorAtTest(fileFullPath: string, testName: string): Promise<boolean> {
+    private async positionCursorAtTest(fileFullPath: string, testName: string): Promise<PositionedTest | undefined> {
         const uri = vscode.Uri.file(fileFullPath);
         const doc = await vscode.workspace.openTextDocument(uri);
 
@@ -172,11 +408,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         ];
 
         let target: vscode.Position | undefined;
+        let codeLensTarget: vscode.Position | undefined;
         for (const pattern of patterns) {
             for (let i = 0; i < doc.lineCount; i++) {
                 const line = doc.lineAt(i).text;
                 const match = pattern.exec(line);
                 if (match) {
+                    codeLensTarget = new vscode.Position(i, match.index);
                     // Place cursor one line below the method signature, inside
                     // the body. The method-name line itself can be outside the
                     // TestItem range used by some test controllers (notably
@@ -195,8 +433,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             }
         }
 
-        if (!target) {
-            return false;
+        if (!target || !codeLensTarget) {
+            return undefined;
         }
 
         const selection = new vscode.Range(target, target);
@@ -216,7 +454,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         // reads the active editor synchronously, so without this small wait the
         // command can race and pick whichever editor was previously focused.
         await this.waitForActiveEditor(uri);
-        return true;
+        return { uri, codeLensTarget, target };
     }
 
     private async waitForActiveEditor(uri: vscode.Uri, timeoutMs = 1500): Promise<void> {
@@ -551,7 +789,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * handler only reads children for variables explicitly requested by the
      * caller, rather than recursively dumping every value in scope.
      */
-    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+    public async getVariableChildren(
+        variablesReference: number,
+        options: VariableChildrenOptions = {}
+    ): Promise<any[]> {
         if (variablesReference <= 0) {
             return [];
         }
@@ -562,8 +803,14 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
+            const indexedVariables = Number(options.indexedVariables) || 0;
             const response = await this.dapRequest(activeSession, 'variables', {
-                variablesReference
+                variablesReference,
+                ...(indexedVariables > 0 ? {
+                    filter: 'indexed',
+                    start: 0,
+                    count: indexedVariables
+                } : {})
             });
             return response?.variables || [];
         } catch (error) {

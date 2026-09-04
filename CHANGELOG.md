@@ -4,6 +4,16 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Ruby live-debugging guidance.** The bundled `debug-live` skill now covers Ruby LSP setup, exact RSpec example launches, Rails launch and attach workflows with read-only breakpoint waiting, rdbg entry pauses, and Ruby value inspection.
+
+### Fixed
+- **Ruby debugging now uses Shopify Ruby LSP correctly.** Automatic `.rb` launch configurations target the modern `ruby_lsp` debug adapter and pass the Ruby command and file separately, including paths with spaces. Scalar rdbg values are returned instead of being mistaken for complex objects, synthetic class metadata is omitted, Ruby arrays use indexed DAP retrieval, and RSpec Testing API launches continue past rdbg's entry pause to the configured breakpoint. Documentation no longer points to the deprecated `rebornix.ruby` extension.
+- **Named RSpec debugging now targets one example.** `start_debugging` matches the example's debugger CodeLens and preserves its exact `file:line` instead of degrading to a whole-file run when full test discovery is enabled. CodeLens dispatch is scoped to `*_spec.rb`, so every other language retains its previous VS Code Testing API path.
+- **Paused frames no longer require source locations.** `get_debug_status`, step state changes, and continue settlement now use the actionable DAP frame/thread context, so adapters such as rdbg remain paused when file and line metadata are unavailable.
+
 ## [2.3.4] - 2026-09-03
 
 ### Added

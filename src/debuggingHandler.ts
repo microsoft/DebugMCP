@@ -98,13 +98,12 @@ export class DebuggingHandler implements IDebuggingHandler {
             let testRunComplete: Promise<void> | undefined;
 
             if (testName && !hasExplicitConfig) {
-                // Route through VS Code's Testing API. This works for any language
-                // whose extension registers a TestController and correctly handles
-                // child-process attach for runners like `dotnet test`.
+                // RSpec needs its exact debugger CodeLens. Every other test
+                // retains the original VS Code Testing API dispatch.
                 const dispatch = await this.executor.debugTestAtCursor(fileFullPath, testName);
                 started = dispatch.started;
                 testRunComplete = dispatch.runComplete;
-                configDescription = `testing.debugAtCursor (test: ${testName})`;
+                configDescription = dispatch.description ?? 'testing.debugAtCursor';
             } else {
                 const debugConfig = await this.configManager.getDebugConfig(
                     workingDirectory,
@@ -121,7 +120,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 // (and any runner where onDidTerminateDebugSession doesn't fire
                 // reliably for parent/child sessions), the test-run-complete signal
                 // is what tells us a clean run finished without ever pausing.
-                const readyState = testRunComplete
+                let readyState = testRunComplete
                     ? await Promise.race([
                         readyPromise,
                         testRunComplete.then(() => 'terminated' as const)
@@ -130,7 +129,24 @@ export class DebuggingHandler implements IDebuggingHandler {
 
                 logger.info(`handleStartDebugging: readyState=${readyState}, fetching current state…`);
                 const testInfo = testName ? ` (test: ${testName})` : '';
-                const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+                let currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+
+                // rdbg reports its debugger-entry pause before the requested
+                // RSpec breakpoint. Continue that Ruby test debug session once
+                // so start_debugging returns at the user's actual breakpoint.
+                if (readyState === 'stopped' &&
+                    testRunComplete &&
+                    this.executor.getActiveSession()?.type.toLowerCase() === 'ruby_lsp' &&
+                    this.shouldContinueToConfiguredBreakpoint(currentState)) {
+                    const breakpointReady = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
+                    await this.executor.continue();
+                    readyState = await Promise.race([
+                        breakpointReady,
+                        testRunComplete.then(() => 'terminated' as const)
+                    ]);
+                    currentState = await this.executor.getCurrentDebugState(this.numNextLines);
+                }
+
                 logger.info('handleStartDebugging: got current state, returning response');
 
                 switch (readyState) {
@@ -151,6 +167,16 @@ export class DebuggingHandler implements IDebuggingHandler {
         } catch (error) {
             throw new Error(`Error starting debug session: ${error}`);
         }
+    }
+
+    private shouldContinueToConfiguredBreakpoint(state: DebugState): boolean {
+        if (!state.fileName || state.currentLine === null || state.breakpoints.length === 0) {
+            return false;
+        }
+
+        const location = `${state.fileName}:${state.currentLine}`;
+        return !state.breakpoints.some(breakpoint =>
+            breakpoint === location || breakpoint.startsWith(`${location} [`));
     }
 
     /**
@@ -295,11 +321,15 @@ export class DebuggingHandler implements IDebuggingHandler {
 
             const startedAt = Date.now();
             let state = await this.executor.getCurrentDebugState(this.numNextLines);
-            if (waitSeconds > 0 && state.sessionActive && !state.hasLocationInfo()) {
+            if (waitSeconds > 0 && state.sessionActive && !state.hasValidContext()) {
                 state = await this.waitForPause(waitSeconds * 1000);
             }
 
-            const paused = state.sessionActive && state.hasLocationInfo();
+            // A stopped DAP frame is actionable even when the adapter cannot
+            // map it to a local source file. rdbg, disassembly-only frames, and
+            // sourceReference-backed adapters may all provide frame/thread IDs
+            // while leaving file/line empty.
+            const paused = state.hasValidContext();
             logger.info(
                 `debug status: ${paused ? 'paused' : 'running'} at ${describeLocation(state)} ` +
                     `after ${Date.now() - startedAt}ms (waited up to ${waitSeconds}s)`
@@ -375,7 +405,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 );
 
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    if (!currentState.sessionActive || currentState.hasLocationInfo()) {
+                    if (!currentState.sessionActive || currentState.hasValidContext()) {
                         settle('fast path');
                     }
                 });
@@ -685,6 +715,25 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * Some adapters expose implementation metadata as children of scalar
+     * values. Ruby rdbg, for example, gives Integer and String values a
+     * variablesReference for #class and other internals. Those references do
+     * not make the user value an aggregate and should not hide its result.
+     */
+    private static isScalarLikeType(type: unknown): boolean {
+        if (typeof type !== 'string') {
+            return false;
+        }
+
+        const typeName = type.split(/\r?\n/, 1)[0].trim();
+        return /^(?:Integer|Float|Rational|Complex|String|Symbol|TrueClass|FalseClass|NilClass|Regexp)$/.test(typeName);
+    }
+
+    private static isAdapterMetadataVariable(variable: any): boolean {
+        return variable?.name === '#class' || variable?.name === '%ancestors';
+    }
+
+    /**
      * List the variable names (and types) visible at the current execution
      * point, deliberately without any values, so an agent can discover what
      * exists and then request only the ones it needs.
@@ -824,7 +873,8 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 const isComplex = response.variablesReference > 0 &&
-                    !DebuggingHandler.isPointerLikeType(response.type);
+                    !DebuggingHandler.isPointerLikeType(response.type) &&
+                    !DebuggingHandler.isScalarLikeType(response.type);
                 const expressionIsSensitive = isSensitiveExpression(expression);
                 const { value, redacted } = isComplex
                     ? {
@@ -842,7 +892,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                         '  ',
                         1,
                         new Set<number>(),
-                        { remaining: this.maxExpandedFields }
+                        { remaining: this.maxExpandedFields },
+                        response
                     );
                     if (children.text) {
                         resultText += `\n${children.text}`;
@@ -891,7 +942,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         let redacted = false;
         const variablesReference = Number(variable.variablesReference) || 0;
         const isComplex = variablesReference > 0 &&
-            !DebuggingHandler.isPointerLikeType(variable.type);
+            !DebuggingHandler.isPointerLikeType(variable.type) &&
+            !DebuggingHandler.isScalarLikeType(variable.type);
         if (includeValue && isComplex) {
             const redactionName = DebuggingHandler.redactionVariableName(variable, name);
             if (isSensitiveName(redactionName)) {
@@ -915,7 +967,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 `${indent}  `,
                 depth + 1,
                 visitedReferences,
-                expansionBudget
+                expansionBudget,
+                variable
             );
             if (children.text) {
                 text += `\n${children.text}`;
@@ -931,7 +984,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         indent: string,
         depth: number,
         visitedReferences: Set<number>,
-        expansionBudget: { remaining: number }
+        expansionBudget: { remaining: number },
+        parent: any = {}
     ): Promise<{ text: string; redacted: boolean }> {
         if (depth > this.maxVariableExpansionDepth) {
             return { text: `${indent}<maximum expansion depth reached>`, redacted: false };
@@ -942,7 +996,9 @@ export class DebuggingHandler implements IDebuggingHandler {
 
         const nextVisited = new Set(visitedReferences);
         nextVisited.add(variablesReference);
-        const children = await this.executor.getVariableChildren(variablesReference);
+        const children = (await this.executor.getVariableChildren(variablesReference, {
+            indexedVariables: parent.indexedVariables
+        })).filter(child => !DebuggingHandler.isAdapterMetadataVariable(child));
         const rendered: string[] = [];
         let redacted = false;
         let renderedChildren = 0;
@@ -1067,7 +1123,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 // time we subscribed (e.g. a trivial single-line step), or the
                 // program may already be running again after a continue.
                 void this.executor.getCurrentDebugState(this.numNextLines).then(currentState => {
-                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasLocationInfo();
+                    const resumed = settleOnResume && currentState.sessionActive && !currentState.hasValidContext();
                     if (this.hasStateChanged(beforeState, currentState) || !currentState.sessionActive || resumed) {
                         settle('fast path');
                     }
@@ -1091,7 +1147,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * Determine if the debugger state has meaningfully changed
      */
     private hasStateChanged(beforeState: DebugState, afterState: DebugState): boolean {
-        if (beforeState.hasLocationInfo() && !afterState.hasLocationInfo() && afterState.sessionActive) {
+        if (beforeState.hasValidContext() && !afterState.hasValidContext() && afterState.sessionActive) {
             return false;
         }
 
@@ -1099,35 +1155,47 @@ export class DebuggingHandler implements IDebuggingHandler {
         if (beforeState.sessionActive !== afterState.sessionActive) {
             return true;
         }
-        
+
         // If session is no longer active, that's a change
         if (!afterState.sessionActive) {
             return true;
         }
-        
-        // If either state lacks location info, compare what we can
-        if (!beforeState.hasLocationInfo() || !afterState.hasLocationInfo()) {
-            // If one has location info and the other doesn't, that's a change
-            return beforeState.hasLocationInfo() !== afterState.hasLocationInfo();
+
+        // A frame can be stopped and actionable without source information.
+        // Detect context arrival and frame changes independently from location.
+        if (beforeState.hasValidContext() !== afterState.hasValidContext()) {
+            return true;
         }
-        
+
+        if (beforeState.threadId !== afterState.threadId) {
+            return true;
+        }
+
+        if (beforeState.frameId !== afterState.frameId) {
+            return true;
+        }
+
+        if (beforeState.frameName !== afterState.frameName) {
+            return true;
+        }
+
+        if (beforeState.hasLocationInfo() !== afterState.hasLocationInfo()) {
+            return true;
+        }
+
+        // If neither state has a source location, context comparisons above are
+        // all that are available.
+        if (!beforeState.hasLocationInfo()) {
+            return false;
+        }
+
         // Compare file paths - if we moved to a different file, that's a change
         if (beforeState.fileFullPath !== afterState.fileFullPath) {
             return true;
         }
-        
+
         // Compare line numbers - if we moved to a different line, that's a change
         if (beforeState.currentLine !== afterState.currentLine) {
-            return true;
-        }
-        
-        // Compare frame names - if we moved to a different function/method, that's a change
-        if (beforeState.frameName !== afterState.frameName) {
-            return true;
-        }
-        
-        // Compare frame IDs - internal frame change
-        if (beforeState.frameId !== afterState.frameId) {
             return true;
         }
         

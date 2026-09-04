@@ -16,6 +16,7 @@ allowed-tools:
   - step_out
   - continue_execution
   - pause_execution
+  - get_debug_status
   - list_variable_names
   - get_variables_values
   - evaluate_expression
@@ -53,8 +54,9 @@ at runtime behavior:
 2. **Optionally add strategic breakpoints.** Decision points, error-handling branches,
    data boundaries (where input enters, where output is produced).
 3. **Start the session.** Call `start_debugging` with the source file path. For a single
-   test, pass `testName`; the server routes through VS Code's Testing API so test runners
-   like `dotnet test` / `pytest` / `jest` work correctly. The call returns when the
+   test, pass `testName`; Ruby RSpec uses its matching debugger CodeLens, while every
+   other language retains VS Code's Testing API path so test runners like `dotnet test` /
+   `pytest` / `jest` work correctly. The call returns when the
    program either hits a breakpoint (`stopped`) or runs to completion without pausing
    (`terminated`).
 4. **Navigate and inspect.** Use `step_over`, `step_into`, `step_out`, `continue_execution`
@@ -182,9 +184,10 @@ Before ending the debug session, confirm you can answer:
   breakpoint. Logpoints also avoid distorting timing-sensitive code.
 - **Don't overuse breakpoints.** A handful of well-placed pauses beats dozens of noisy
   ones. After each session, `clear_all_breakpoints` to start fresh.
-- **For test debugging,** pass `testName` to `start_debugging`. The server routes through
-  VS Code's Testing API so test runners (`dotnet test`, `pytest`, `jest`, etc.) are
-  driven correctly and the debugger attaches to the child test-host process.
+- **For test debugging,** pass `testName` to `start_debugging`. Ruby RSpec uses its
+  exact debugger CodeLens; other languages retain VS Code's Testing API so test runners
+  (`dotnet test`, `pytest`, `jest`, etc.) are driven correctly and the debugger attaches
+  to the child test-host process.
 
 ---
 
@@ -232,6 +235,7 @@ Load the relevant reference file for the language you're debugging:
 - **C#** → `references/troubleshooting/csharp.md`
 - **C++** → `references/troubleshooting/cpp.md`
 - **Go** → `references/troubleshooting/go.md`
+- **Ruby** → `references/troubleshooting/ruby.md`
 
 Each reference covers prerequisites (which VS Code extension to install), framework-specific
 configuration (e.g. enabling `pytest` test discovery, building `.NET` projects before
