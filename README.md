@@ -1,6 +1,6 @@
 # DebugMCP (MCP Server) - Empowering AI Agents with Operational Debugging Capabilities
 
-Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Compatible with any VS Code supported coding language.
+Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Claude Code**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Compatible with any VS Code supported coding language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
@@ -133,6 +133,7 @@ DebugMCP works with any MCP-compatible AI assistant. It auto-detects and offers 
 |-----------|:-----------------:|:-------------:|
 | **GitHub Copilot** | ✅ | [See config](#github-copilot) |
 | **GitHub Copilot CLI** | ✅ | [See config](#github-copilot-cli) |
+| **Claude Code** | ✅ | [See config](#claude-code) |
 | **Cline** | ✅ | [See config](#cline) |
 | **Cursor** | ✅ | [See config](#cursor) |
 | **Codex** | ✅ | [See config](#codex) |
@@ -213,6 +214,26 @@ Add to `~/.copilot/mcp-config.json` (`${COPILOT_HOME}/mcp-config.json` if `COPIL
   }
 }
 ```
+
+#### Claude Code
+Register DebugMCP with Claude Code:
+```bash
+claude mcp add --transport http debugmcp http://localhost:3001/mcp
+```
+
+Or add the equivalent configuration to `~/.claude.json` (top-level `mcpServers`, for cross-project user-scope access — see the [Claude Code MCP docs](https://code.claude.com/docs/en/mcp)):
+```json
+{
+  "mcpServers": {
+    "debugmcp": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp"
+    }
+  }
+}
+```
+
+> **Claude Desktop**: Claude Desktop connects to local/remote HTTP MCP servers through **Settings → Connectors → Add custom connector** rather than a static config file — paste `http://localhost:3001/mcp` there. DebugMCP doesn't auto-register with Desktop for this reason.
 
 #### Cursor
 Add to Cursor's MCP settings:
@@ -315,7 +336,7 @@ DebugMCP exposes powerful debugger primitives (`evaluate_expression`, `start_deb
 <details>
 <summary><b>Which AI assistants are supported?</b></summary>
 
-DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **GitHub Copilot CLI**, **Cline**, **Cursor**, **Codex**, **Windsurf**, **Roo Code**, **Antigravity**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP.
+DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **GitHub Copilot CLI**, **Claude Code**, **Cline**, **Cursor**, **Codex**, **Windsurf**, **Roo Code**, **Antigravity**, and others. If your assistant supports the Model Context Protocol, it can use DebugMCP. Claude Desktop can also connect via its Custom Connector UI (see [Claude Code](#claude-code) in the manual configuration section).
 </details>
 
 <details>
@@ -429,7 +450,7 @@ The extension handles debug configurations intelligently:
   - **Rust**: [rust-analyzer extension](vscode:extension/rust-lang.rust-analyzer)
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
   - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
-- MCP-compatible AI assistant (Copilot, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
+- MCP-compatible AI assistant (Copilot, Claude Code, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
 
 ## Development
 
