@@ -60,9 +60,9 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **continue_execution** | Continue until next breakpoint | None |
 | **pause_execution** | Interrupt a freely-running program and stop at its current location (no breakpoint needed) | None |
 | **restart_debugging** | Restart the current debug session | None |
-| **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`condition` (optional) |
-| **add_logpoint** | Add a logpoint that logs a message (instead of pausing) when a line is reached | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`logMessage` (required, `{expr}` interpolated)<br>`condition` (optional) |
-| **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
+| **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required; path or virtual URI)<br>`workingDirectory` (optional; identifies the window for virtual URIs)<br>`line` (required, 1-based)<br>`condition` (optional) |
+| **add_logpoint** | Add a logpoint that logs a message (instead of pausing) when a line is reached | `fileFullPath` (required; path or virtual URI)<br>`workingDirectory` (optional; identifies the window for virtual URIs)<br>`line` (required, 1-based)<br>`logMessage` (required, `{expr}` interpolated)<br>`condition` (optional) |
+| **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required; path or virtual URI)<br>`workingDirectory` (optional; identifies the window for virtual URIs)<br>`line` (required) |
 | **clear_all_breakpoints** | Remove all breakpoints at once | None |
 | **list_breakpoints** | List all active breakpoints | None |
 | **list_variable_names** | List names and types of variables in scope, without reading any values | `scope` (optional: 'local', 'global', 'all') |
@@ -156,6 +156,16 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
 | **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
 | **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs`, `.csproj` | ✅ Fully Supported |
+| **AL (Business Central)** | [AL Language](https://marketplace.visualstudio.com/items?itemName=ms-dynamics-smb.al) | `.al`, virtual `.dal` | ✅ Supported with an AL launch configuration |
+
+### Virtual source documents
+
+Breakpoint tools accept native filesystem paths and VS Code virtual-document URIs. This
+supports generated or downloaded sources that a language extension exposes without a local
+file, including Business Central dependency objects such as
+`al-preview://AlLang/.../Table/18/Customer.dal`. When multiple editor windows are open,
+pass `workingDirectory` with the virtual URI so DebugMCP routes the operation to the correct
+workspace.
 
 ## Configuration
 

@@ -50,6 +50,8 @@ extension. To avoid debugging the wrong workspace when several windows are open:
   operation to that window's `ControlServer`. The target is cached per session so hint-less
   follow-ups (step/continue/inspect) reach the same window. If the router window closes,
   a worker window takes over the port on retry.
+- Breakpoint tools also accept virtual source URIs. A sole registered window is unambiguous;
+  with multiple windows, callers provide the optional `workingDirectory` routing hint.
 
 `DebugMCPServer` builds one handler **per MCP session** via a handler factory, which is
 what lets concurrent agent sessions drive debuggers in different repos simultaneously.
@@ -117,7 +119,7 @@ error wins:
 | `continue_execution` | Continue to next breakpoint |
 | `pause_execution` | Interrupt a running program (no breakpoint needed) |
 | `restart_debugging` | Restart session |
-| `add/remove_breakpoint` | Breakpoint management |
+| `add/remove_breakpoint` | Breakpoint management for local paths and virtual source URIs |
 | `clear_all_breakpoints` | Remove all breakpoints |
 | `list_breakpoints` | List active breakpoints |
 | `get_variables_values` | Read the values of specifically named variables |

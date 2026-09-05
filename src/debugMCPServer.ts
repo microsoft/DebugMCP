@@ -263,33 +263,36 @@ export class DebugMCPServer {
         server.registerTool('add_breakpoint', {
             description: 'Set a breakpoint to pause execution at a critical line of code. Breakpoints let you inspect variables and control flow at exact moments.',
             inputSchema: {
-                fileFullPath: z.string().describe('Full path to the file'),
+                fileFullPath: z.string().describe('Full path or VS Code virtual-document URI of the source file'),
+                workingDirectory: z.string().optional().describe('Workspace directory used to select the correct VS Code window. Required for a virtual-document URI when multiple windows are open.'),
                 line: z.number().int().describe('Line number (1-based) where the breakpoint should be set'),
                 condition: z.string().optional().describe('Optional condition expression. When provided, execution only pauses if this expression evaluates to true at the breakpoint location.'),
             },
-        }, async (args: { fileFullPath: string; line: number; condition?: string }) =>
+        }, async (args: { fileFullPath: string; workingDirectory?: string; line: number; condition?: string }) =>
             this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
         // Add logpoint tool
         server.registerTool('add_logpoint', {
             description: 'Add a logpoint: a breakpoint that logs a message instead of pausing execution. Ideal for tracing values across many iterations or hot paths without stopping, or where a hard pause would distort timing. Embed expressions in curly braces to interpolate runtime values, e.g. "user id={user.id}".',
             inputSchema: {
-                fileFullPath: z.string().describe('Full path to the file'),
+                fileFullPath: z.string().describe('Full path or VS Code virtual-document URI of the source file'),
+                workingDirectory: z.string().optional().describe('Workspace directory used to select the correct VS Code window. Required for a virtual-document URI when multiple windows are open.'),
                 line: z.number().int().describe('Line number (1-based) where the logpoint should be set'),
                 logMessage: z.string().describe('Message to log when the line is reached. Wrap expressions in {curly braces} to interpolate runtime values.'),
                 condition: z.string().optional().describe('Optional condition expression. When provided, the message is only logged if this expression evaluates to true.'),
             },
-        }, async (args: { fileFullPath: string; line: number; logMessage: string; condition?: string }) =>
+        }, async (args: { fileFullPath: string; workingDirectory?: string; line: number; logMessage: string; condition?: string }) =>
             this.runTool('add_logpoint', () => debuggingHandler.handleAddLogpoint(args)));
 
         // Remove breakpoint tool
         server.registerTool('remove_breakpoint', {
             description: 'Remove a breakpoint that is no longer needed.',
             inputSchema: {
-                fileFullPath: z.string().describe('Full path to the file'),
+                fileFullPath: z.string().describe('Full path or VS Code virtual-document URI of the source file'),
+                workingDirectory: z.string().optional().describe('Workspace directory used to select the correct VS Code window. Required for a virtual-document URI when multiple windows are open.'),
                 line: z.number().describe('Line number (1-based)'),
             },
-        }, async (args: { fileFullPath: string; line: number }) =>
+        }, async (args: { fileFullPath: string; workingDirectory?: string; line: number }) =>
             this.runTool('remove_breakpoint', () => debuggingHandler.handleRemoveBreakpoint(args)));
 
         // Clear all breakpoints tool
