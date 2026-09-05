@@ -39,7 +39,7 @@ function deferred<T>(): Deferred<T> {
     return { promise, resolve, reject };
 }
 
-type ReadyState = 'stopped' | 'terminated' | 'timeout' | 'no-session';
+type ReadyState = 'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached';
 
 interface MockOpts {
     readyState?: Deferred<ReadyState>;
@@ -308,6 +308,26 @@ suite('handleStartDebugging regression matrix', () => {
 
         const result = await pending;
         assert.match(result, /stopped at breakpoint/);
+    });
+
+    // Attaching to a long-lived process (an app server, a daemon) neither stops nor
+    // terminates on its own. Before 'attached' existed, this burned the whole timeout
+    // window and the MCP client gave up first - the attach had actually succeeded.
+    test('attach path: a live attach returns promptly instead of waiting for a frame', async () => {
+        const ready = deferred<ReadyState>();
+        const { executor, configManager } = makeMocks({ readyState: ready });
+        const handler = new DebuggingHandler(executor, configManager, 30);
+
+        const pending = handler.handleStartDebugging({
+            fileFullPath: '/repo/App.cs',
+            workingDirectory: '/repo',
+            configurationName: 'Attach to C# process'
+        });
+        ready.resolve('attached');
+
+        const result = await pending;
+        assert.match(result, /attached to the running process/);
+        assert.doesNotMatch(result, /did not stop or terminate/);
     });
 });
 

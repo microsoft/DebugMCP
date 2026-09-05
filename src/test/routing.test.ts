@@ -35,6 +35,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handleGetVariables(args: any) { return this.record('vars', args); }
 	handleListVariableNames(args?: any) { return this.record('varNames', args ?? {}); }
 	handleEvaluateExpression(args: any) { return this.record('eval', args); }
+	handleGetDebugStatus(args?: any) { return this.record('status', args ?? {}); }
 }
 
 suite('Multi-window routing', () => {
@@ -214,6 +215,38 @@ suite('Multi-window routing', () => {
 	test('hint-less call without an established target throws', async () => {
 		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
 		await assert.rejects(() => routing.handleStepOver(), /no active debug target/i);
+	});
+
+	test('hint-less call on a fresh session uses the only registered window', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const handlerA = new RecordingHandler('A');
+		await startWindow('a.json', [repoA], handlerA);
+
+		// A brand-new session (as MCP clients create constantly) has no cached
+		// target, but a single window leaves nothing to disambiguate.
+		const fresh = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		assert.strictEqual(await fresh.handleStepOver(), 'A:stepOver');
+		assert.strictEqual(await fresh.handleEvaluateExpression({ expression: 'x' }), 'A:eval');
+		assert.deepStrictEqual(handlerA.calls.map(c => c.op), ['stepOver', 'eval']);
+	});
+
+	test('hint-less call on a fresh session fails closed when several windows are registered', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const repoB = path.join(dir, 'repoB');
+		const handlerA = new RecordingHandler('A');
+		const handlerB = new RecordingHandler('B');
+		await startWindow('a.json', [repoA], handlerA);
+		await startWindow('b.json', [repoB], handlerB);
+
+		const first = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		await first.handleStartDebugging({ fileFullPath: path.join(repoB, 'm.py'), workingDirectory: repoB });
+
+		// Another agent's session must never inherit that routing: guessing here
+		// would silently drive someone else's debugger.
+		const second = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		await assert.rejects(() => second.handleContinue(), /no active debug target/);
+		assert.strictEqual(handlerA.calls.length, 0, 'the other window must not be touched');
+		assert.deepStrictEqual(handlerB.calls.map(c => c.op), ['start'], 'only the routed call reached B');
 	});
 
 	/**

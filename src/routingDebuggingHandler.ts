@@ -35,16 +35,15 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 	/**
 	 * Resolve (and cache) the target from an optional path hint; a hint always
 	 * re-resolves, otherwise the cached target is reused.
+	 *
+	 * Hint-less operations (step, continue, evaluate, inspect) are the majority
+	 * of a debugging session and carry nothing to route on, so when this session
+	 * has no cached target we recover rather than fail - but only when a single
+	 * registered window makes the answer unambiguous.
 	 */
 	private resolveTarget(pathHint?: string, virtualSource = false): WindowRegistration {
 		if (pathHint) {
-			let found = virtualSource ? undefined : this.registry.findByPath(pathHint);
-			if (!found && virtualSource && !this.target) {
-				const windows = this.registry.list();
-				if (windows.length === 1) {
-					found = windows[0];
-				}
-			}
+			const found = virtualSource ? undefined : this.registry.findByPath(pathHint);
 			const candidates = this.registry
 				.list()
 				.map((w) => `pid=${w.pid} port=${w.controlPort} folders=[${w.workspaceFolders.join(', ') || 'none'}]`)
@@ -54,13 +53,43 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 					`Registered windows: ${candidates || '(none)'}`
 			);
 			if (found) {
-				this.target = found;
+				this.adoptTarget(found);
+			}
+		}
+		if (!this.target) {
+			const recovered = this.recoverTarget();
+			if (recovered) {
+				this.adoptTarget(recovered);
 			}
 		}
 		if (!this.target) {
 			throw new Error(this.noTargetMessage(pathHint, virtualSource));
 		}
 		return this.target;
+	}
+
+	/** Cache a resolved target for this session. */
+	private adoptTarget(target: WindowRegistration): void {
+		this.target = target;
+	}
+
+	/**
+	 * Recover a target for a hint-less call on a session that has never routed.
+	 *
+	 * Deliberately only recovers when exactly one window is registered. With
+	 * several windows there is no way to tell which debugger the caller means,
+	 * and guessing would silently drive someone else's session - so those callers
+	 * still get the actionable "route with a file path" error.
+	 */
+	private recoverTarget(): WindowRegistration | undefined {
+		const windows = this.registry.list();
+		if (windows.length === 1) {
+			logger.info(
+				`No routing hint and no cached target; using the only registered window pid=${windows[0].pid} port=${windows[0].controlPort}.`
+			);
+			return windows[0];
+		}
+		return undefined;
 	}
 
 	private noTargetMessage(pathHint?: string, virtualSource = false): string {
@@ -87,18 +116,23 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		}
 		return (
 			'DebugMCP has no active debug target for this session. ' +
-			'Call start_debugging (or add_breakpoint) with a file path first so DebugMCP can route to the right VS Code window.'
+			(windows.length
+				? `Several VS Code windows are registered (${openList}) and none has been routed to yet - ` +
+					'call start_debugging (or add_breakpoint) with a file path so DebugMCP can pick the right one.'
+				: 'No DebugMCP-enabled VS Code windows are currently registered - open the workspace in VS Code.')
 		);
 	}
 
 	private async forward(op: string, args: unknown, pathHint?: string, virtualSource = false): Promise<string> {
 		const target = this.resolveTarget(pathHint, virtualSource);
+		logger.info(`Forwarding ${op} to pid=${target.pid} port=${target.controlPort}${pathHint ? '' : ' (cached target, no path hint)'}`);
 		try {
 			return await this.post(target, op, args);
 		} catch (error) {
 			// Failed round-trip usually means the window closed; drop the cache
-			// so the next path-bearing call re-resolves.
+			// so the next call re-resolves against the live registry.
 			this.target = undefined;
+			logger.warn(`Forward of ${op} failed; dropped cached target so the next call re-resolves.`);
 			throw error;
 		}
 	}
@@ -249,5 +283,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
 	public handleEvaluateExpression(args: { expression: string }): Promise<string> {
 		return this.forward('handleEvaluateExpression', args);
+	}
+
+	public handleGetDebugStatus(args: { waitForPauseSeconds?: number } = {}): Promise<string> {
+		return this.forward('handleGetDebugStatus', args);
 	}
 }
