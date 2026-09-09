@@ -105,3 +105,7 @@ Recursive expansion is bounded to 100 child fields total per response, shared ac
 All operations wrap errors with context about what operation failed, enabling AI agents to understand and potentially recover from failures.
 Expression evaluation also distinguishes an adapter error from a successful
 command whose result/output was not captured.
+
+## RSpec stops
+
+Named RSpec examples use exact debugger CodeLens dispatch. The first stopped frame is returned unchanged; the handler never infers an entry pause from source-breakpoint mismatch or automatically continues it. See [RSpec debugging](../rspec-debugging.md).

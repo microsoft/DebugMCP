@@ -38,6 +38,13 @@ VS Code's debug API is powerful but requires careful handling. `DebuggingExecuto
 
 ## Key Concepts
 
+### Single-test dispatch
+
+For `*_spec.rb`, the executor selects the debugger CodeLens that names the requested example, contains it, or starts
+on its definition line. Modern Ruby RSpec CodeLenses omit the launch program, so the executor combines the configured
+RSpec command with the exact `file:line` and starts `ruby_lsp` directly. Every other language and test type retains
+the original `testing.debugAtCursor` path without CodeLens interception.
+
 ### VS Code Debug Commands
 
 Stepping and control operations use VS Code's command system:
