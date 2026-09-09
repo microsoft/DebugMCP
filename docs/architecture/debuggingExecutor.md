@@ -40,10 +40,27 @@ VS Code's debug API is powerful but requires careful handling. `DebuggingExecuto
 
 ### Single-test dispatch
 
-For `*_spec.rb`, the executor selects the debugger CodeLens that names the requested example, contains it, or starts
-on its definition line. Modern Ruby RSpec CodeLenses omit the launch program, so the executor combines the configured
-RSpec command with the exact `file:line` and starts `ruby_lsp` directly. Every other language and test type retains
+For `*_spec.rb`, exact example names outrank suffix-only provider names. The requested definition line or containing
+range disambiguates candidates; otherwise ambiguous matches raise an error rather than launching another example. Modern Ruby RSpec CodeLenses omit the launch program, so the executor combines the configured
+RSpec command with the entire `file:line` quoted as one POSIX shell argument and starts `ruby_lsp` directly. Every other language and test type retains
 the original `testing.debugAtCursor` path without CodeLens interception.
+
+### Startup Failure Diagnostics
+
+`src/utils/debugStartup.ts` observes task lifecycle events before dispatching a
+launch. It correlates newly started executions with the selected configuration's
+`preLaunchTask` and labeled `dependsOn` tasks in the same workspace. Nonzero exit
+codes produce an error naming the task and configuration, even if VS Code is
+still waiting for the user to dismiss a task-failure dialog. Reporting the failure
+does not dismiss that dialog or cancel VS Code's pending launch request.
+
+Thrown configuration/adapter errors are preserved. When VS Code declines startup
+without details, the response directs the caller to launch/task configuration
+and diagnostic output instead of assuming a missing language extension. Task
+events expose an exit code, not terminal text; the response makes that limitation
+explicit rather than inventing the underlying command error.
+Task-identifier objects and dynamically supplied task configuration are not
+resolved by this observer; startup still proceeds through VS Code normally.
 
 ### VS Code Debug Commands
 
@@ -86,6 +103,8 @@ A session is considered "ready" when:
 2. Location info is available (file name and line number)
 
 This handles cases where the debugger is still initializing (common with Python).
+`waitForDebugSessionReady()` accepts cancellation so a failed startup does not
+leave its readiness timeout and event subscriptions behind.
 
 ### State Retrieval
 
@@ -120,3 +139,7 @@ For `coreclr` debug type, the executor uses a different approach:
 - Executes `testing.debugCurrentFile` command
 
 This handles .NET's test debugging workflow which differs from other languages.
+
+## Variable inspection
+
+When a parent advertises indexed children, retrieve both indexed and named groups, including adapters that omit the named count. This preserves custom properties on containers. Parents without indexed children retain the unfiltered variables request.

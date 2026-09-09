@@ -103,9 +103,18 @@ Recursive expansion is bounded to 100 child fields total per response, shared ac
 ## Error Handling
 
 All operations wrap errors with context about what operation failed, enabling AI agents to understand and potentially recover from failures.
+Startup preserves task/configuration errors from the executor instead of
+replacing them with an extension-installation hint. Readiness listeners are
+started only after configuration resolution and cancelled when the startup
+operation finishes or fails. Test-dispatch failures propagate as errors rather
+than being interpreted as successful test completion.
 Expression evaluation also distinguishes an adapter error from a successful
 command whose result/output was not captured.
 
 ## RSpec stops
 
 Named RSpec examples use exact debugger CodeLens dispatch. The first stopped frame is returned unchanged; the handler never infers an entry pause from source-breakpoint mismatch or automatically continues it. See [RSpec debugging](../rspec-debugging.md).
+
+## Variable inspection
+
+For `ruby_lsp` sessions, Ruby scalar values keep their result even when rdbg attaches metadata children. Synthetic `#class` and `%ancestors` children are omitted only for Ruby. Existing secret redaction and names/types-only descendant rendering remain in force.

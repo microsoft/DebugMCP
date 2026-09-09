@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
+import { getDebugStartupContext, startDebuggingWithDiagnostics } from './utils/debugStartup';
 
 /**
  * Outcome of dispatching a test debugger through the RSpec CodeLens or
@@ -36,19 +37,27 @@ export function findDebugCodeLens(
     const debuggerCodeLenses = codeLenses.filter(codeLens =>
         codeLens.command && /debug/i.test(codeLens.command.command)
     );
-    const namedCodeLenses = testName
-        ? debuggerCodeLenses.filter(codeLens => codeLensCommandMatchesTest(codeLens.command, testName))
+    const exactMatches = testName
+        ? debuggerCodeLenses.filter(codeLens => codeLensCommandMatchesTest(codeLens.command, testName, true))
         : [];
-    const containingCodeLenses = debuggerCodeLenses.filter(codeLens => codeLens.range.contains(target));
-    const sameLineCodeLenses = debuggerCodeLenses.filter(codeLens => codeLens.range.start.line === target.line);
-    const candidates = namedCodeLenses.length > 0
-        ? namedCodeLenses
-        : containingCodeLenses.length > 0
-            ? containingCodeLenses
-            : sameLineCodeLenses;
+    const suffixMatches = testName && exactMatches.length === 0
+        ? debuggerCodeLenses.filter(codeLens => codeLensCommandMatchesTest(codeLens.command, testName, false))
+        : [];
+    const namedMatches = exactMatches.length > 0 ? exactMatches : suffixMatches;
+    const candidates = namedMatches.length > 0 ? namedMatches : debuggerCodeLenses;
+    const sameLine = candidates.filter(codeLens => codeLens.range.start.line === target.line);
+    const containing = candidates.filter(codeLens => codeLens.range.contains(target));
+    const positioned = sameLine.length > 0 ? sameLine : containing;
+    const ranked = (positioned.length > 0 ? positioned : namedMatches)
+        .slice().sort((left, right) => rangeWeight(left.range) - rangeWeight(right.range));
 
-    return candidates
-        .sort((left, right) => rangeWeight(left.range) - rangeWeight(right.range))[0];
+    // A smaller range only disambiguates lenses at the requested position.
+    // Never select an unrelated example merely because its range is shorter.
+    if (ranked.length > 1 && (positioned.length === 0 ||
+        rangeWeight(ranked[0].range) === rangeWeight(ranked[1].range))) {
+        throw new Error(`Ambiguous debugger CodeLens for test '${testName ?? ''}'; use a unique example name or an explicit launch configuration.`);
+    }
+    return ranked[0];
 }
 
 export function addRubyRspecProgram(
@@ -70,7 +79,11 @@ export function addRubyRspecProgram(
     while (args.length < 2) {
         args.push(undefined);
     }
-    args[2] = `${rspecCommand} ${fileFullPath}:${line}`;
+    const target = `${fileFullPath}:${line}`;
+    // Ruby LSP passes program verbatim to a shell. Quote the complete selector,
+    // including the line number; embedded single quotes must leave/re-enter it.
+    const quotedTarget = `'${target.replace(/'/g, "'\"'\"'")}'`;
+    args[2] = `${rspecCommand} ${quotedTarget}`;
     return { ...command, arguments: args };
 }
 
@@ -88,9 +101,9 @@ export function shouldUseDebuggerCodeLens(fileFullPath: string): boolean {
     return fileFullPath.endsWith('_spec.rb');
 }
 
-function codeLensCommandMatchesTest(command: vscode.Command | undefined, testName: string): boolean {
+function codeLensCommandMatchesTest(command: vscode.Command | undefined, testName: string, exact: boolean): boolean {
     return command?.arguments?.some(argument =>
-        typeof argument === 'string' && (argument === testName || argument.endsWith(testName))
+        typeof argument === 'string' && (exact ? argument === testName : argument.endsWith(testName))
     ) ?? false;
 }
 
@@ -105,6 +118,10 @@ function rangeWeight(range: vscode.Range): number {
 /**
  * Interface for debugging execution operations
  */
+export interface VariableChildrenOptions {
+    indexedVariables?: number;
+}
+
 export interface IDebuggingExecutor {
     startDebugging(workingDirectory: string, config: string | vscode.DebugConfiguration): Promise<boolean>;
     debugTestAtCursor(fileFullPath: string, testName: string): Promise<TestDebugDispatch>;
@@ -119,13 +136,13 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
-    getVariableChildren(variablesReference: number): Promise<any[]>;
+    getVariableChildren(variablesReference: number, options?: VariableChildrenOptions): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
-    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
+    waitForDebugSessionReady(timeoutMs: number, signal?: AbortSignal): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
 }
 
 /**
@@ -165,7 +182,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     ): Promise<boolean> {
         try {
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
-            return await vscode.debug.startDebugging(workspaceFolder, config);
+            return await startDebuggingWithDiagnostics(
+                () => vscode.debug.startDebugging(workspaceFolder, config),
+                getDebugStartupContext(config, workspaceFolder)
+            );
         } catch (error) {
             throw new Error(`Failed to start debugging: ${error}`);
         }
@@ -228,6 +248,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             .then(() => undefined)
             .catch(err => {
                 logger.error(`testing.debugAtCursor failed: ${err}`);
+                throw err;
             });
         return { started: true, runComplete, description: 'testing.debugAtCursor' };
     }
@@ -785,7 +806,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * handler only reads children for variables explicitly requested by the
      * caller, rather than recursively dumping every value in scope.
      */
-    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+    public async getVariableChildren(
+        variablesReference: number,
+        options: VariableChildrenOptions = {}
+    ): Promise<any[]> {
         if (variablesReference <= 0) {
             return [];
         }
@@ -796,9 +820,23 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
-            const response = await this.dapRequest(activeSession, 'variables', {
-                variablesReference
-            });
+            const indexedVariables = Number(options.indexedVariables) || 0;
+            if (indexedVariables > 0) {
+                const indexed = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'indexed',
+                    start: 0,
+                    count: indexedVariables
+                });
+                // The named count is optional. Always request this group so
+                // containers with custom properties retain those children too.
+                const named = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'named'
+                });
+                return [ ...(indexed?.variables ?? []), ...(named?.variables ?? []) ];
+            }
+            const response = await this.dapRequest(activeSession, 'variables', { variablesReference });
             return response?.variables || [];
         } catch (error) {
             throw new Error(`Failed to expand variable: ${error}`);
@@ -985,8 +1023,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * start *and* terminate inside a polling interval.
      */
     public async waitForDebugSessionReady(
-        timeoutMs: number
+        timeoutMs: number,
+        signal?: AbortSignal
     ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'> {
+        if (signal?.aborted) {
+            return 'no-session';
+        }
         // Helper: a session is only truly "stopped and actionable" when we have
         // a DebugStackFrame (frameId present). A bare DebugThread means a thread
         // is selected but the adapter hasn't published a frame yet — calling
@@ -1027,6 +1069,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 const timer = setTimeout(() => {
                     settle(trackedSession ? 'timeout' : 'no-session');
                 }, timeoutMs);
+
+                if (signal) {
+                    const abort = () => settle('no-session');
+                    signal.addEventListener('abort', abort, { once: true });
+                    subscriptions.push(new vscode.Disposable(() => signal.removeEventListener('abort', abort)));
+                }
 
                 subscriptions.push(
                     vscode.debug.onDidStartDebugSession(session => {

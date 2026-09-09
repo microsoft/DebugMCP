@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import * as vscode from 'vscode';
 import {
     addRubyRspecProgram,
@@ -45,6 +46,62 @@ suite('DebuggingExecutor CodeLens selection', () => {
         assert.strictEqual(findDebugCodeLens([ selected ], target), selected);
     });
 
+    test('prefers saves over an earlier also saves CodeLens with an equal range size', () => {
+        const target = new vscode.Position(6, 6);
+        const suffix = codeLens('rubyLsp.debugTest', new vscode.Range(2, 2, 2, 3), [ 'also saves' ]);
+        const exact = codeLens('rubyLsp.debugTest', new vscode.Range(6, 2, 6, 3), [ 'saves' ]);
+        assert.strictEqual(findDebugCodeLens([ suffix, exact ], target, 'saves'), exact);
+        assert.strictEqual(findDebugCodeLens([ exact, suffix ], target, 'saves'), exact);
+        assert.strictEqual(findDebugCodeLens([ suffix, exact ], suffix.range.start, 'saves'), exact);
+    });
+
+    test('uses the requested position to disambiguate identical example names', () => {
+        const first = codeLens('rubyLsp.debugTest', new vscode.Range(2, 2, 2, 3), [ 'saves' ]);
+        const selected = codeLens('rubyLsp.debugTest', new vscode.Range(6, 2, 6, 3), [ 'saves' ]);
+        assert.strictEqual(findDebugCodeLens([ first, selected ], new vscode.Position(6, 6), 'saves'), selected);
+    });
+
+    for (const names of [ [ 'saves', 'saves' ], [ 'group saves', 'another group saves' ] ]) {
+        test(`rejects ambiguous names away from the requested position: ${names.join(', ')}`, () => {
+            const first = codeLens('rubyLsp.debugTest', new vscode.Range(2, 2, 2, 3), [ names[0] ]);
+            const second = codeLens('rubyLsp.debugTest', new vscode.Range(6, 2, 6, 40), [ names[1] ]);
+            assert.throws(() => findDebugCodeLens([ first, second ], new vscode.Position(20, 0), 'saves'),
+                /Ambiguous debugger CodeLens/);
+        });
+    }
+
+    test('rejects equally ranked debugger lenses at the same position', () => {
+        const range = new vscode.Range(6, 2, 6, 3);
+        const first = codeLens('rubyLsp.debugTest', range, [ 'saves' ]);
+        const second = codeLens('rubyLsp.debugTest', range, [ 'saves' ]);
+        assert.throws(() => findDebugCodeLens([ first, second ], range.start, 'saves'),
+            /Ambiguous debugger CodeLens/);
+    });
+
+    test('disambiguates suffix-only provider names by the requested definition line', () => {
+        const first = codeLens('rubyLsp.debugTest', new vscode.Range(2, 2, 2, 3), [ 'group also saves' ]);
+        const selected = codeLens('rubyLsp.debugTest', new vscode.Range(6, 2, 6, 3), [ 'group saves' ]);
+        assert.strictEqual(findDebugCodeLens([ first, selected ], new vscode.Position(6, 6), 'saves'), selected);
+    });
+
+    test('passes a spaced or shell-sensitive file:line to a real shell as exactly one literal argument', function () {
+        if (process.platform === 'win32') {
+            this.skip(); // This integration check requires a POSIX shell.
+        }
+        for (const file of [
+            '/repo/with spaces/spec/example_spec.rb',
+            '/repo/with\'single"double/spec/example_spec.rb',
+            '/repo/$(printf injected)/`printf injected`/$PATH/example_spec.rb',
+            '/repo/a;b&c|d>e<f*(g)?[h]/example_spec.rb',
+            '/repo/with\nnewline/example_spec.rb'
+        ]) {
+            const command = addRubyRspecProgram(vscodeCommand('rubyLsp.debugTest', [ file, 'example' ]),
+                file, 6, "printf '%s\\0'");
+            const output = execFileSync('/bin/sh', [ '-c', command.arguments![2] ], { encoding: 'utf8' });
+            assert.strictEqual(output, `${file}:6\0`);
+        }
+    });
+
     test('adds an exact RSpec command to a modern Ruby LSP CodeLens', () => {
         const command = vscodeCommand('rubyLsp.debugTest', [
             '/repo/spec/example_spec.rb',
@@ -56,7 +113,7 @@ suite('DebuggingExecutor CodeLens selection', () => {
             [
                 '/repo/spec/example_spec.rb',
                 './spec/example_spec.rb:4::./spec/example_spec.rb:6',
-                'bin/rspec-lsp /repo/spec/example_spec.rb:6'
+                "bin/rspec-lsp '/repo/spec/example_spec.rb:6'"
             ]
         );
     });
@@ -76,12 +133,12 @@ suite('DebuggingExecutor CodeLens selection', () => {
 
     test('builds an exact ruby_lsp launch configuration without Test Explorer', () => {
         assert.deepStrictEqual(
-            rubyRspecDebugConfiguration('bin/rspec-lsp /repo/spec/example_spec.rb:6'),
+            rubyRspecDebugConfiguration("bin/rspec-lsp '/repo/spec/example_spec.rb:6'"),
             {
                 type: 'ruby_lsp',
                 name: 'Debug',
                 request: 'launch',
-                program: 'bin/rspec-lsp /repo/spec/example_spec.rb:6',
+                program: "bin/rspec-lsp '/repo/spec/example_spec.rb:6'",
                 env: { DISABLE_SPRING: '1' }
             }
         );
@@ -137,7 +194,7 @@ suite('DebuggingExecutor RSpec dispatch', () => {
         try {
             const dispatch = await executor.debugTestAtCursor(uri.fsPath, 'selected');
             assert.strictEqual(dispatch.started, true);
-            assert.strictEqual(launched?.program, 'bin/rspec-lsp /repo/spec/example_spec.rb:6');
+            assert.strictEqual(launched?.program, "bin/rspec-lsp '/repo/spec/example_spec.rb:6'");
             let complete = false;
             void dispatch.runComplete.then(() => { complete = true; });
             terminated?.({ id: 'unrelated-session' } as vscode.DebugSession);

@@ -83,21 +83,19 @@ export class DebuggingHandler implements IDebuggingHandler {
         const hasExplicitConfig = !!configurationName &&
             configurationName.trim() !== '' &&
             configurationName !== DebugConfigurationManager.getAutoLaunchConfigName();
+        const readinessAbort = new AbortController();
 		
         try {
             logger.info(`handleStartDebugging: file=${fileFullPath} test=${testName ?? '<none>'} config=${configurationName ?? '<auto>'}`);
 
-            // Start listening BEFORE we trigger the debug session, otherwise
-            // `onDidStartDebugSession` / `onDidChangeActiveStackItem` can fire
-            // during the trigger call (testing.debugAtCursor / vscode.debug.startDebugging
-            // can resolve only after the session is already up) and we'd miss them.
-            const readyPromise = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
-
+            let readyPromise: ReturnType<IDebuggingExecutor['waitForDebugSessionReady']>;
             let started: boolean;
             let configDescription: string;
             let testRunComplete: Promise<void> | undefined;
 
             if (testName && !hasExplicitConfig) {
+                readyPromise = this.executor.waitForDebugSessionReady(
+                    this.timeoutInSeconds * 1000, readinessAbort.signal);
                 // RSpec needs its exact debugger CodeLens. Every other test
                 // retains the original VS Code Testing API dispatch.
                 const dispatch = await this.executor.debugTestAtCursor(fileFullPath, testName);
@@ -110,6 +108,10 @@ export class DebuggingHandler implements IDebuggingHandler {
                     fileFullPath,
                     configurationName
                 );
+                // Subscribe before launch so fast debug events are not lost,
+                // but only after configuration resolution has succeeded.
+                readyPromise = this.executor.waitForDebugSessionReady(
+                    this.timeoutInSeconds * 1000, readinessAbort.signal);
                 started = await this.executor.startDebugging(workingDirectory, debugConfig);
                 const configName = typeof debugConfig === 'string' ? debugConfig : debugConfig.name;
                 configDescription = configName ? `configuration '${configName}'` : 'default configuration';
@@ -140,15 +142,17 @@ export class DebuggingHandler implements IDebuggingHandler {
                     case 'terminated':
                         return `Debug session for ${fileFullPath} ran to completion without stopping (no breakpoint hit). Using ${configDescription}${testInfo}. Final state: ${currentState.toString()}`;
                     case 'no-session':
-                        throw new Error('Debug session failed to start within the timeout period. Make sure the appropriate language extension is installed and any required build step succeeded.');
+                        throw new Error('No debug session started within the timeout period. Check launch.json, any preLaunchTask in tasks.json, and the task terminal or Debug Console for startup errors.');
                     case 'timeout':
                         return `Debug session is running but did not stop or terminate within the timeout for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
                 }
             } else {
-                throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
+                throw new Error('Failed to start debug session: VS Code declined or cancelled startup without providing an error detail. Check launch.json, any preLaunchTask in tasks.json, and the task terminal or Debug Console.');
             }
         } catch (error) {
             throw new Error(`Error starting debug session: ${error}`);
+        } finally {
+            readinessAbort.abort();
         }
     }
 
@@ -684,6 +688,26 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * Some adapters expose implementation metadata as children of scalar
+     * values. Ruby rdbg, for example, gives Integer and String values a
+     * variablesReference for #class and other internals. Those references do
+     * not make the user value an aggregate and should not hide its result.
+     */
+    private isScalarLikeType(type: unknown): boolean {
+        if (this.executor.getActiveSession?.()?.type.toLowerCase() !== 'ruby_lsp' || typeof type !== 'string') {
+            return false;
+        }
+
+        const typeName = type.split(/\r?\n/, 1)[0].trim();
+        return /^(?:Integer|Float|Rational|Complex|String|Symbol|TrueClass|FalseClass|NilClass|Regexp)$/.test(typeName);
+    }
+
+    private isAdapterMetadataVariable(variable: any): boolean {
+        return this.executor.getActiveSession?.()?.type.toLowerCase() === 'ruby_lsp' &&
+            (variable?.name === '#class' || variable?.name === '%ancestors');
+    }
+
+    /**
      * List the variable names (and types) visible at the current execution
      * point, deliberately without any values, so an agent can discover what
      * exists and then request only the ones it needs.
@@ -823,7 +847,8 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 const isComplex = response.variablesReference > 0 &&
-                    !DebuggingHandler.isPointerLikeType(response.type);
+                    !DebuggingHandler.isPointerLikeType(response.type) &&
+                    !this.isScalarLikeType(response.type);
                 const expressionIsSensitive = isSensitiveExpression(expression);
                 const { value, redacted } = isComplex
                     ? {
@@ -841,7 +866,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                         '  ',
                         1,
                         new Set<number>(),
-                        { remaining: this.maxExpandedFields }
+                        { remaining: this.maxExpandedFields },
+                        response
                     );
                     if (children.text) {
                         resultText += `\n${children.text}`;
@@ -890,7 +916,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         let redacted = false;
         const variablesReference = Number(variable.variablesReference) || 0;
         const isComplex = variablesReference > 0 &&
-            !DebuggingHandler.isPointerLikeType(variable.type);
+            !DebuggingHandler.isPointerLikeType(variable.type) &&
+            !this.isScalarLikeType(variable.type);
         if (includeValue && isComplex) {
             const redactionName = DebuggingHandler.redactionVariableName(variable, name);
             if (isSensitiveName(redactionName)) {
@@ -914,7 +941,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 `${indent}  `,
                 depth + 1,
                 visitedReferences,
-                expansionBudget
+                expansionBudget,
+                variable
             );
             if (children.text) {
                 text += `\n${children.text}`;
@@ -930,7 +958,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         indent: string,
         depth: number,
         visitedReferences: Set<number>,
-        expansionBudget: { remaining: number }
+        expansionBudget: { remaining: number },
+        parent: any = {}
     ): Promise<{ text: string; redacted: boolean }> {
         if (depth > this.maxVariableExpansionDepth) {
             return { text: `${indent}<maximum expansion depth reached>`, redacted: false };
@@ -941,7 +970,9 @@ export class DebuggingHandler implements IDebuggingHandler {
 
         const nextVisited = new Set(visitedReferences);
         nextVisited.add(variablesReference);
-        const children = await this.executor.getVariableChildren(variablesReference);
+        const children = (await this.executor.getVariableChildren(variablesReference, {
+            indexedVariables: parent.indexedVariables
+        })).filter(child => !this.isAdapterMetadataVariable(child));
         const rendered: string[] = [];
         let redacted = false;
         let renderedChildren = 0;

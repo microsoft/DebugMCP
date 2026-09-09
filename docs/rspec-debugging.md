@@ -12,7 +12,9 @@ Set the breakpoint in the application or example, then call `start_debugging` wi
 
 DebugMCP prefers the matching Ruby LSP debugger CodeLens and preserves its exact `file:line` target. This matters for
 nested example groups and files containing many examples; a whole-file launch can exercise unrelated setup and hide the
-original failure.
+original failure. Exact names take priority over suffix matches; ambiguous matches fail with a diagnostic instead
+of selecting an unrelated example. Generated `file:line` targets are quoted as a single POSIX shell argument, including
+embedded quotes and expansion characters. Provider-supplied programs and the configured runner command stay unchanged.
 
 If the debugger CodeLens is missing:
 
