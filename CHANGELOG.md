@@ -4,6 +4,11 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Preserve Ruby scalar values and retrieve both indexed and named children, with Ruby metadata filtering scoped to Ruby LSP.
+
 ## [2.3.4] - 2026-09-03
 
 ### Added

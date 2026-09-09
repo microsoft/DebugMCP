@@ -685,6 +685,26 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * Some adapters expose implementation metadata as children of scalar
+     * values. Ruby rdbg, for example, gives Integer and String values a
+     * variablesReference for #class and other internals. Those references do
+     * not make the user value an aggregate and should not hide its result.
+     */
+    private isScalarLikeType(type: unknown): boolean {
+        if (this.executor.getActiveSession?.()?.type.toLowerCase() !== 'ruby_lsp' || typeof type !== 'string') {
+            return false;
+        }
+
+        const typeName = type.split(/\r?\n/, 1)[0].trim();
+        return /^(?:Integer|Float|Rational|Complex|String|Symbol|TrueClass|FalseClass|NilClass|Regexp)$/.test(typeName);
+    }
+
+    private isAdapterMetadataVariable(variable: any): boolean {
+        return this.executor.getActiveSession?.()?.type.toLowerCase() === 'ruby_lsp' &&
+            (variable?.name === '#class' || variable?.name === '%ancestors');
+    }
+
+    /**
      * List the variable names (and types) visible at the current execution
      * point, deliberately without any values, so an agent can discover what
      * exists and then request only the ones it needs.
@@ -824,7 +844,8 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (response && response.result !== undefined) {
                 let resultText = `Expression: ${expression}\n`;
                 const isComplex = response.variablesReference > 0 &&
-                    !DebuggingHandler.isPointerLikeType(response.type);
+                    !DebuggingHandler.isPointerLikeType(response.type) &&
+                    !this.isScalarLikeType(response.type);
                 const expressionIsSensitive = isSensitiveExpression(expression);
                 const { value, redacted } = isComplex
                     ? {
@@ -842,7 +863,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                         '  ',
                         1,
                         new Set<number>(),
-                        { remaining: this.maxExpandedFields }
+                        { remaining: this.maxExpandedFields },
+                        response
                     );
                     if (children.text) {
                         resultText += `\n${children.text}`;
@@ -891,7 +913,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         let redacted = false;
         const variablesReference = Number(variable.variablesReference) || 0;
         const isComplex = variablesReference > 0 &&
-            !DebuggingHandler.isPointerLikeType(variable.type);
+            !DebuggingHandler.isPointerLikeType(variable.type) &&
+            !this.isScalarLikeType(variable.type);
         if (includeValue && isComplex) {
             const redactionName = DebuggingHandler.redactionVariableName(variable, name);
             if (isSensitiveName(redactionName)) {
@@ -915,7 +938,8 @@ export class DebuggingHandler implements IDebuggingHandler {
                 `${indent}  `,
                 depth + 1,
                 visitedReferences,
-                expansionBudget
+                expansionBudget,
+                variable
             );
             if (children.text) {
                 text += `\n${children.text}`;
@@ -931,7 +955,8 @@ export class DebuggingHandler implements IDebuggingHandler {
         indent: string,
         depth: number,
         visitedReferences: Set<number>,
-        expansionBudget: { remaining: number }
+        expansionBudget: { remaining: number },
+        parent: any = {}
     ): Promise<{ text: string; redacted: boolean }> {
         if (depth > this.maxVariableExpansionDepth) {
             return { text: `${indent}<maximum expansion depth reached>`, redacted: false };
@@ -942,7 +967,9 @@ export class DebuggingHandler implements IDebuggingHandler {
 
         const nextVisited = new Set(visitedReferences);
         nextVisited.add(variablesReference);
-        const children = await this.executor.getVariableChildren(variablesReference);
+        const children = (await this.executor.getVariableChildren(variablesReference, {
+            indexedVariables: parent.indexedVariables
+        })).filter(child => !this.isAdapterMetadataVariable(child));
         const rendered: string[] = [];
         let redacted = false;
         let renderedChildren = 0;

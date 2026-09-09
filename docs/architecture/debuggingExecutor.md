@@ -113,3 +113,7 @@ For `coreclr` debug type, the executor uses a different approach:
 - Executes `testing.debugCurrentFile` command
 
 This handles .NET's test debugging workflow which differs from other languages.
+
+## Variable inspection
+
+When a parent advertises indexed children, retrieve both indexed and named groups, including adapters that omit the named count. This preserves custom properties on containers. Parents without indexed children retain the unfiltered variables request.

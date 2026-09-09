@@ -105,3 +105,7 @@ Recursive expansion is bounded to 100 child fields total per response, shared ac
 All operations wrap errors with context about what operation failed, enabling AI agents to understand and potentially recover from failures.
 Expression evaluation also distinguishes an adapter error from a successful
 command whose result/output was not captured.
+
+## Variable inspection
+
+For `ruby_lsp` sessions, Ruby scalar values keep their result even when rdbg attaches metadata children. Synthetic `#class` and `%ancestors` children are omitted only for Ruby. Existing secret redaction and names/types-only descendant rendering remain in force.

@@ -23,6 +23,10 @@ export interface TestDebugDispatch {
 /**
  * Interface for debugging execution operations
  */
+export interface VariableChildrenOptions {
+    indexedVariables?: number;
+}
+
 export interface IDebuggingExecutor {
     startDebugging(workingDirectory: string, config: string | vscode.DebugConfiguration): Promise<boolean>;
     debugTestAtCursor(fileFullPath: string, testName: string): Promise<TestDebugDispatch>;
@@ -37,7 +41,7 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
-    getVariableChildren(variablesReference: number): Promise<any[]>;
+    getVariableChildren(variablesReference: number, options?: VariableChildrenOptions): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
@@ -551,7 +555,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * handler only reads children for variables explicitly requested by the
      * caller, rather than recursively dumping every value in scope.
      */
-    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+    public async getVariableChildren(
+        variablesReference: number,
+        options: VariableChildrenOptions = {}
+    ): Promise<any[]> {
         if (variablesReference <= 0) {
             return [];
         }
@@ -562,9 +569,23 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
-            const response = await this.dapRequest(activeSession, 'variables', {
-                variablesReference
-            });
+            const indexedVariables = Number(options.indexedVariables) || 0;
+            if (indexedVariables > 0) {
+                const indexed = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'indexed',
+                    start: 0,
+                    count: indexedVariables
+                });
+                // The named count is optional. Always request this group so
+                // containers with custom properties retain those children too.
+                const named = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'named'
+                });
+                return [ ...(indexed?.variables ?? []), ...(named?.variables ?? []) ];
+            }
+            const response = await this.dapRequest(activeSession, 'variables', { variablesReference });
             return response?.variables || [];
         } catch (error) {
             throw new Error(`Failed to expand variable: ${error}`);
