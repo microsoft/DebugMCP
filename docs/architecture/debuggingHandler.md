@@ -105,3 +105,7 @@ Recursive expansion is bounded to 100 child fields total per response, shared ac
 All operations wrap errors with context about what operation failed, enabling AI agents to understand and potentially recover from failures.
 Expression evaluation also distinguishes an adapter error from a successful
 command whose result/output was not captured.
+
+## Source-less frames
+
+Paused status and state transitions use an active frame/thread context, independently of source location. This supports rdbg, native/disassembly frames, and sourceReference-only adapters. A still-paused source-less frame is not a resume; frame/thread changes are meaningful even when neither frame has file/line metadata.

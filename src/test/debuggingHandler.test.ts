@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -107,6 +108,23 @@ suite('DebuggingHandler State Change Detection', () => {
         
         const hasStateChanged = (handler as any).hasStateChanged(beforeState, afterState);
         
+        assert.strictEqual(hasStateChanged, true);
+    });
+
+    test('hasStateChanged should detect frame changes without source locations', () => {
+        const handler = new DebuggingHandler({} as any, {} as any, 30);
+
+        const beforeState = new DebugState();
+        beforeState.sessionActive = true;
+        beforeState.updateContext(1, 1);
+        beforeState.updateFrameName('first');
+
+        const afterState = beforeState.clone();
+        afterState.updateContext(2, 1);
+        afterState.updateFrameName('second');
+
+        const hasStateChanged = (handler as any).hasStateChanged(beforeState, afterState);
+
         assert.strictEqual(hasStateChanged, true);
     });
 });
@@ -236,6 +254,14 @@ suite('DebuggingHandler continue on a never-stopping process', () => {
         return s;
     }
 
+    function pausedStateWithoutLocation(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        s.updateContext(1, 1);
+        s.updateFrameName('money');
+        return s;
+    }
+
     function makeExecutor(getState: (call: number) => DebugState): IDebuggingExecutor {
         let call = 0;
         return {
@@ -275,6 +301,17 @@ suite('DebuggingHandler continue on a never-stopping process', () => {
         assert.ok(elapsed < 2000, 'continue should resolve as soon as the program resumes, took ' + elapsed + 'ms');
     });
 
+    test('continue does not mistake a source-less stopped frame for resumed execution', async () => {
+        const executor = makeExecutor(() => pausedStateWithoutLocation());
+        const handler = new DebuggingHandler(executor, {} as any, 0.3);
+
+        const started = Date.now();
+        await handler.handleContinue();
+        const elapsed = Date.now() - started;
+
+        assert.ok(elapsed >= 200, 'a still-paused frame should wait for resume, only took ' + elapsed + 'ms');
+    });
+
     test('step still waits for the next frame rather than settling on the resume', async () => {
         // Same state sequence, but stepping must NOT treat "running" as arrival,
         // otherwise a step would return a frameless state mid-step.
@@ -303,6 +340,14 @@ suite('DebuggingHandler get_debug_status', () => {
     function runningState(): DebugState {
         const s = new DebugState();
         s.sessionActive = true;
+        return s;
+    }
+
+    function pausedStateWithoutLocation(): DebugState {
+        const s = new DebugState();
+        s.sessionActive = true;
+        s.updateContext(1, 1);
+        s.updateFrameName('money');
         return s;
     }
 
@@ -340,6 +385,59 @@ suite('DebuggingHandler get_debug_status', () => {
         assert.strictEqual(result.state.currentLine, 42);
         assert.strictEqual(result.state.fileName, 'file.js');
     });
+
+    test('reports an rdbg frame as paused when source location is unavailable', async () => {
+        const handler = new DebuggingHandler(makeExecutor(pausedStateWithoutLocation()), {} as any, 30);
+
+        const started = Date.now();
+        const result = JSON.parse(await handler.handleGetDebugStatus({ waitForPauseSeconds: 30 }));
+        const elapsed = Date.now() - started;
+
+        assert.strictEqual(result.status, 'paused');
+        assert.strictEqual(result.paused, true);
+        assert.strictEqual(result.state.frameId, 1);
+        assert.strictEqual(result.state.threadId, 1);
+        assert.strictEqual(result.state.fileName, null);
+        assert.strictEqual(result.state.currentLine, null);
+        assert.ok(elapsed < 1000, 'an existing rdbg frame must not wait, took ' + elapsed + 'ms');
+    });
+
+    test('waiting settles when a source-less stopped frame becomes available', async () => {
+        let call = 0;
+        const executor = makeExecutor(runningState());
+        executor.getCurrentDebugState = async () => (call++ === 0 ? runningState() : pausedStateWithoutLocation());
+        const handler = new DebuggingHandler(executor, {} as any, 30);
+
+        const started = Date.now();
+        const result = JSON.parse(await handler.handleGetDebugStatus({ waitForPauseSeconds: 30 }));
+        const elapsed = Date.now() - started;
+
+        assert.strictEqual(result.status, 'paused');
+        assert.strictEqual(result.state.frameName, 'money');
+        assert.ok(elapsed < 1000, 'the source-less stopped frame should settle the wait, took ' + elapsed + 'ms');
+    });
+
+    for (const adapter of [ 'ruby_lsp', 'cppdbg', 'pwa-node' ]) {
+        test(`${adapter}: source-less frame and thread transitions preserve paused status`, async () => {
+            const before = pausedStateWithoutLocation();
+            const executor = makeExecutor(before);
+            executor.getActiveSession = () => ({ type: adapter }) as vscode.DebugSession;
+            const handler = new DebuggingHandler(executor, {} as any, 1);
+            const output = JSON.parse(await handler.handleGetDebugStatus({ waitForPauseSeconds: 1 }));
+            assert.strictEqual(output.status, 'paused');
+            const changed = (after: DebugState) => (handler as any).hasStateChanged(before, after);
+            assert.strictEqual(changed(before.clone()), false);
+            const nextThread = before.clone();
+            nextThread.updateContext(1, 2);
+            assert.strictEqual(changed(nextThread), true);
+            const nextFrame = before.clone();
+            nextFrame.updateContext(2, 1);
+            assert.strictEqual(changed(nextFrame), true);
+            assert.strictEqual(changed(runningState()), false);
+            assert.strictEqual(changed(new DebugState()), true);
+            assert.strictEqual(changed(pausedState()), true);
+        });
+    }
 
     test('reports running without waiting and without throwing', async () => {
         const handler = new DebuggingHandler(makeExecutor(runningState()), {} as any, 30);
