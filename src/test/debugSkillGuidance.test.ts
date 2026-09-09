@@ -7,8 +7,10 @@ import { suite, test } from 'mocha';
 
 suite('debug-live skill guidance', () => {
     const skillPath = path.resolve(__dirname, '..', '..', 'skills', 'debug-live', 'SKILL.md');
+    const rubyGuidancePath = path.resolve(__dirname, '..', '..', 'skills', 'debug-live', 'references', 'troubleshooting', 'ruby.md');
     const serverPath = path.resolve(__dirname, '..', '..', 'src', 'debugMCPServer.ts');
     const skill = fs.readFileSync(skillPath, 'utf8');
+    const rubyGuidance = fs.readFileSync(rubyGuidancePath, 'utf8');
     const serverSource = fs.readFileSync(serverPath, 'utf8');
     const description = skill.match(/^description:\s*(.+)$/m)?.[1] ?? '';
 
@@ -41,5 +43,11 @@ suite('debug-live skill guidance', () => {
 
     test('start_debugging points agents to the skill', () => {
         assert.match(serverSource, /Invoke the "debug-live" skill first\./);
+    });
+
+    test('Ruby attach guidance waits for a breakpoint without interrupting the server', () => {
+        assert.match(skill, /^  - get_debug_status$/m);
+        assert.match(rubyGuidance, /`get_debug_status` with `waitForPauseSeconds`/);
+        assert.match(rubyGuidance, /without polling or interrupting the server with `pause_execution`/);
     });
 });

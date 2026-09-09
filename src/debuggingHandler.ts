@@ -83,21 +83,19 @@ export class DebuggingHandler implements IDebuggingHandler {
         const hasExplicitConfig = !!configurationName &&
             configurationName.trim() !== '' &&
             configurationName !== DebugConfigurationManager.getAutoLaunchConfigName();
+        const readinessAbort = new AbortController();
 		
         try {
             logger.info(`handleStartDebugging: file=${fileFullPath} test=${testName ?? '<none>'} config=${configurationName ?? '<auto>'}`);
 
-            // Start listening BEFORE we trigger the debug session, otherwise
-            // `onDidStartDebugSession` / `onDidChangeActiveStackItem` can fire
-            // during the trigger call (testing.debugAtCursor / vscode.debug.startDebugging
-            // can resolve only after the session is already up) and we'd miss them.
-            const readyPromise = this.executor.waitForDebugSessionReady(this.timeoutInSeconds * 1000);
-
+            let readyPromise: ReturnType<IDebuggingExecutor['waitForDebugSessionReady']>;
             let started: boolean;
             let configDescription: string;
             let testRunComplete: Promise<void> | undefined;
 
             if (testName && !hasExplicitConfig) {
+                readyPromise = this.executor.waitForDebugSessionReady(
+                    this.timeoutInSeconds * 1000, readinessAbort.signal);
                 // Route through VS Code's Testing API. This works for any language
                 // whose extension registers a TestController and correctly handles
                 // child-process attach for runners like `dotnet test`.
@@ -111,6 +109,10 @@ export class DebuggingHandler implements IDebuggingHandler {
                     fileFullPath,
                     configurationName
                 );
+                // Subscribe before launch so fast debug events are not lost,
+                // but only after configuration resolution has succeeded.
+                readyPromise = this.executor.waitForDebugSessionReady(
+                    this.timeoutInSeconds * 1000, readinessAbort.signal);
                 started = await this.executor.startDebugging(workingDirectory, debugConfig);
                 const configName = typeof debugConfig === 'string' ? debugConfig : debugConfig.name;
                 configDescription = configName ? `configuration '${configName}'` : 'default configuration';
@@ -141,15 +143,17 @@ export class DebuggingHandler implements IDebuggingHandler {
                     case 'terminated':
                         return `Debug session for ${fileFullPath} ran to completion without stopping (no breakpoint hit). Using ${configDescription}${testInfo}. Final state: ${currentState.toString()}`;
                     case 'no-session':
-                        throw new Error('Debug session failed to start within the timeout period. Make sure the appropriate language extension is installed and any required build step succeeded.');
+                        throw new Error('No debug session started within the timeout period. Check launch.json, any preLaunchTask in tasks.json, and the task terminal or Debug Console for startup errors.');
                     case 'timeout':
                         return `Debug session is running but did not stop or terminate within the timeout for: ${fileFullPath} using ${configDescription}${testInfo}. Current state: ${currentState.toString()}`;
                 }
             } else {
-                throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
+                throw new Error('Failed to start debug session: VS Code declined or cancelled startup without providing an error detail. Check launch.json, any preLaunchTask in tasks.json, and the task terminal or Debug Console.');
             }
         } catch (error) {
             throw new Error(`Error starting debug session: ${error}`);
+        } finally {
+            readinessAbort.abort();
         }
     }
 
