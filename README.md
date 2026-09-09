@@ -154,7 +154,7 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **Go** | [Go](https://marketplace.visualstudio.com/items?itemName=golang.Go) | `.go` | ✅ Fully Supported |
 | **Rust** | [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) | `.rs` | ✅ Fully Supported |
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
-| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
+| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=Shopify.ruby-lsp) | `.rb` | ✅ Fully Supported |
 | **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs`, `.csproj` | ✅ Fully Supported |
 
 ## Configuration
@@ -428,7 +428,7 @@ The extension handles debug configurations intelligently:
   - **Go**: [Go extension](vscode:extension/golang.go)
   - **Rust**: [rust-analyzer extension](vscode:extension/rust-lang.rust-analyzer)
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
-  - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
+  - **Ruby**: [Ruby extension](vscode:extension/Shopify.ruby-lsp) and the [`debug` gem](https://github.com/ruby/debug)
 - MCP-compatible AI assistant (Copilot, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
 
 ## Development

@@ -119,7 +119,8 @@ const LANGUAGES: LangCase[] = [
     { label: 'Java',       file: '/repo/src/App.java',        debuggerType: 'java'     },
     { label: 'C#',         file: '/repo/src/AppTests.cs',     debuggerType: 'coreclr'  },
     { label: 'C++',        file: '/repo/src/app.cpp',         debuggerType: 'cppdbg'   },
-    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       }
+    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       },
+    { label: 'Ruby',       file: '/repo/src/app.rb',          debuggerType: 'ruby_lsp' }
 ];
 
 suite('handleStartDebugging regression matrix', () => {
