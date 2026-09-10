@@ -459,11 +459,11 @@ export class AgentConfigurationManager {
                     continue; // DebugMCP not configured for this agent
                 }
 
-                // Check if it's using the old SSE configuration
+                // Claude Code's HTTP transport is current; still migrate legacy SSE endpoints.
                 const needsMigration = agent.id === 'copilot-cli'
                     ? debugmcpConfig.type !== 'http' || (debugmcpConfig.url && debugmcpConfig.url.endsWith('/sse'))
                     : debugmcpConfig.type === 'sse' ||
-                    debugmcpConfig.type === 'http' ||
+                    (debugmcpConfig.type === 'http' && agent.id !== 'claude-code') ||
                     (debugmcpConfig.url && debugmcpConfig.url.endsWith('/sse'));
 
                 if (needsMigration) {

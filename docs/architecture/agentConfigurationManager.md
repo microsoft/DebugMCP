@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, GitHub Copilot CLI, Cursor, Codex) to connect to the DebugMCP server. Provides a seamless onboarding experience.
+Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, GitHub Copilot CLI, Claude Code, Cursor, Codex) to connect to the DebugMCP server. Provides a seamless onboarding experience.
 
 ## Motivation
 
-For AI agents to use DebugMCP, they need MCP server configuration in their settings files. Rather than requiring users to manually edit JSON files, this manager auto-configures supported agents with the correct SSE endpoint.
+For AI agents to use DebugMCP, they need MCP server configuration in their settings files. Rather than requiring users to manually edit JSON files, this manager auto-configures supported agents with the Streamable HTTP endpoint.
 
 ## Responsibility
 
@@ -28,6 +28,7 @@ Popup** from the Command Palette after correcting the JSON.
 | Cline | `cline_mcp_settings.json` | `mcpServers` |
 | GitHub Copilot | `mcp.json` | `servers` |
 | GitHub Copilot CLI | `~/.copilot/mcp-config.json` or `${COPILOT_HOME}/mcp-config.json` | `mcpServers` |
+| Claude Code | `~/.claude.json` | Top-level `mcpServers` (user scope, shared across projects) |
 | Cursor | `mcp_settings.json` | `mcpServers` |
 | Codex | `~/.codex/config.toml` or `${CODEX_HOME}/config.toml` | `mcp_servers.debugmcp` |
 
@@ -67,6 +68,16 @@ GitHub Copilot CLI uses:
   }
 }
 ```
+
+Claude Code uses `type: "http"` and `url` in the top-level `mcpServers.debugmcp`
+entry of `~/.claude.json`. Setup preserves unrelated top-level settings, project
+settings (including project-scoped MCP servers), and other user-scoped MCP servers.
+
+On extension activation, migration leaves existing Claude Code `http` and
+`streamable-http` entries unchanged, including custom URLs and headers, unless
+the URL still ends in `/sse`. Entries with `type: "sse"` or a legacy `/sse` URL
+are migrated to the current HTTP configuration. Once migrated, subsequent runs
+do not rewrite the configuration or report another migration.
 
 Codex uses TOML:
 ```toml

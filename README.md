@@ -218,7 +218,7 @@ Add to `~/.copilot/mcp-config.json` (`${COPILOT_HOME}/mcp-config.json` if `COPIL
 #### Claude Code
 Register DebugMCP with Claude Code:
 ```bash
-claude mcp add --transport http debugmcp http://localhost:3001/mcp
+claude mcp add --transport http --scope user debugmcp http://localhost:3001/mcp
 ```
 
 Or add the equivalent configuration to `~/.claude.json` (top-level `mcpServers`, for cross-project user-scope access — see the [Claude Code MCP docs](https://code.claude.com/docs/en/mcp)):
