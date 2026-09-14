@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
+import { getDebugStartupContext, startDebuggingWithDiagnostics } from './utils/debugStartup';
 
 /**
  * Outcome of dispatching `testing.debugAtCursor`.
@@ -23,6 +24,10 @@ export interface TestDebugDispatch {
 /**
  * Interface for debugging execution operations
  */
+export interface VariableChildrenOptions {
+    indexedVariables?: number;
+}
+
 export interface IDebuggingExecutor {
     startDebugging(workingDirectory: string, config: string | vscode.DebugConfiguration): Promise<boolean>;
     debugTestAtCursor(fileFullPath: string, testName: string): Promise<TestDebugDispatch>;
@@ -37,13 +42,13 @@ export interface IDebuggingExecutor {
     removeBreakpoint(uri: vscode.Uri, line: number): Promise<void>;
     getCurrentDebugState(numNextLines: number): Promise<DebugState>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all'): Promise<any>;
-    getVariableChildren(variablesReference: number): Promise<any[]>;
+    getVariableChildren(variablesReference: number, options?: VariableChildrenOptions): Promise<any[]>;
     evaluateExpression(expression: string, frameId: number): Promise<any>;
     getBreakpoints(): readonly vscode.Breakpoint[];
     clearAllBreakpoints(): void;
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): vscode.DebugSession | undefined;
-    waitForDebugSessionReady(timeoutMs: number): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
+    waitForDebugSessionReady(timeoutMs: number, signal?: AbortSignal): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
 }
 
 /**
@@ -83,7 +88,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     ): Promise<boolean> {
         try {
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(workingDirectory));
-            return await vscode.debug.startDebugging(workspaceFolder, config);
+            return await startDebuggingWithDiagnostics(
+                () => vscode.debug.startDebugging(workspaceFolder, config),
+                getDebugStartupContext(config, workspaceFolder)
+            );
         } catch (error) {
             throw new Error(`Failed to start debugging: ${error}`);
         }
@@ -137,6 +145,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             .then(() => undefined)
             .catch(err => {
                 logger.error(`testing.debugAtCursor failed: ${err}`);
+                throw err;
             });
         return { started: true, runComplete };
     }
@@ -551,7 +560,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * handler only reads children for variables explicitly requested by the
      * caller, rather than recursively dumping every value in scope.
      */
-    public async getVariableChildren(variablesReference: number): Promise<any[]> {
+    public async getVariableChildren(
+        variablesReference: number,
+        options: VariableChildrenOptions = {}
+    ): Promise<any[]> {
         if (variablesReference <= 0) {
             return [];
         }
@@ -562,9 +574,23 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new Error('No active debug session');
             }
 
-            const response = await this.dapRequest(activeSession, 'variables', {
-                variablesReference
-            });
+            const indexedVariables = Number(options.indexedVariables) || 0;
+            if (indexedVariables > 0) {
+                const indexed = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'indexed',
+                    start: 0,
+                    count: indexedVariables
+                });
+                // The named count is optional. Always request this group so
+                // containers with custom properties retain those children too.
+                const named = await this.dapRequest(activeSession, 'variables', {
+                    variablesReference,
+                    filter: 'named'
+                });
+                return [ ...(indexed?.variables ?? []), ...(named?.variables ?? []) ];
+            }
+            const response = await this.dapRequest(activeSession, 'variables', { variablesReference });
             return response?.variables || [];
         } catch (error) {
             throw new Error(`Failed to expand variable: ${error}`);
@@ -751,8 +777,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * start *and* terminate inside a polling interval.
      */
     public async waitForDebugSessionReady(
-        timeoutMs: number
+        timeoutMs: number,
+        signal?: AbortSignal
     ): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'> {
+        if (signal?.aborted) {
+            return 'no-session';
+        }
         // Helper: a session is only truly "stopped and actionable" when we have
         // a DebugStackFrame (frameId present). A bare DebugThread means a thread
         // is selected but the adapter hasn't published a frame yet — calling
@@ -793,6 +823,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 const timer = setTimeout(() => {
                     settle(trackedSession ? 'timeout' : 'no-session');
                 }, timeoutMs);
+
+                if (signal) {
+                    const abort = () => settle('no-session');
+                    signal.addEventListener('abort', abort, { once: true });
+                    subscriptions.push(new vscode.Disposable(() => signal.removeEventListener('abort', abort)));
+                }
 
                 subscriptions.push(
                     vscode.debug.onDidStartDebugSession(session => {

@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 - **Claude Code auto-registration** - Claude Code is now offered in the agent selection popup and configured via `~/.claude.json`'s user-scope `mcpServers` field. Claude Desktop connects via its Custom Connector UI instead of a static config file; the README's manual configuration section covers both.
 
+## [2.3.5] - 2026-09-09
+
+### Fixed
+- Preserve Ruby scalar values and retrieve both indexed and named children, with Ruby metadata filtering scoped to Ruby LSP.
+- Use Shopify Ruby LSP for Ruby file launches, passing the command and file separately.
+- Startup failures now report the configured pre-launch task and exit code when available, preserve configuration and test-dispatch errors, and direct agents to launch/task diagnostics instead of assuming a missing language extension. Readiness waits are cancelled when startup fails.
+
 ## [2.3.4] - 2026-09-03
 
 ### Added

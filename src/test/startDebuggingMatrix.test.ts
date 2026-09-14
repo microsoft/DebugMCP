@@ -119,10 +119,50 @@ const LANGUAGES: LangCase[] = [
     { label: 'Java',       file: '/repo/src/App.java',        debuggerType: 'java'     },
     { label: 'C#',         file: '/repo/src/AppTests.cs',     debuggerType: 'coreclr'  },
     { label: 'C++',        file: '/repo/src/app.cpp',         debuggerType: 'cppdbg'   },
-    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       }
+    { label: 'Go',         file: '/repo/src/main.go',         debuggerType: 'go'       },
+    { label: 'Ruby',       file: '/repo/src/app.rb',          debuggerType: 'ruby_lsp' }
 ];
 
 suite('handleStartDebugging regression matrix', () => {
+
+    test('task failure reaches the caller and cancels the readiness listener', async () => {
+        const { executor, configManager } = makeMocks({
+            startResult: new Error("Pre-launch task 'Copy Item' failed with exit code 1. Check tasks.json.")
+        });
+        let readinessSignal: AbortSignal | undefined;
+        executor.waitForDebugSessionReady = (_timeout, signal) => {
+            readinessSignal = signal;
+            return new Promise(resolve => signal?.addEventListener('abort', () => resolve('no-session'), { once: true }));
+        };
+        await assert.rejects(new DebuggingHandler(executor, configManager, 30).handleStartDebugging({
+            fileFullPath: '/repo/app.js', workingDirectory: '/repo'
+        }), /Copy Item.*exit code 1.*tasks\.json/);
+        assert.strictEqual(readinessSignal?.aborted, true);
+    });
+
+    test('configuration errors do not start a readiness listener', async () => {
+        const { executor, configManager } = makeMocks({ debugConfig: new Error('Invalid launch.json') });
+        executor.waitForDebugSessionReady = async () => {
+            assert.fail('readiness must start after config resolution');
+        };
+        await assert.rejects(new DebuggingHandler(executor, configManager, 30).handleStartDebugging({
+            fileFullPath: '/repo/app.js', workingDirectory: '/repo'
+        }), /Invalid launch\.json/);
+    });
+
+    test('test dispatch completion errors are not reported as successful termination', async () => {
+        const ready = deferred<ReadyState>();
+        const completion = deferred<void>();
+        const { executor, configManager } = makeMocks({
+            readyState: ready, testDispatch: { started: true, runComplete: completion.promise }
+        });
+        const result = new DebuggingHandler(executor, configManager, 30).handleStartDebugging({
+            fileFullPath: '/repo/app.js', workingDirectory: '/repo', testName: 'fails'
+        });
+        completion.reject(new Error('Test runner configuration failed'));
+        await assert.rejects(result, /Test runner configuration failed/);
+        ready.resolve('no-session');
+    });
 
     // -------------------------------------------------------------------------
     // Launch path (no testName) — uses executor.startDebugging + readyPromise.

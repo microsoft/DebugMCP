@@ -4,7 +4,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.3.4-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.3.6-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
 > ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
@@ -155,7 +155,7 @@ DebugMCP supports debugging for the following languages with their respective VS
 | **Go** | [Go](https://marketplace.visualstudio.com/items?itemName=golang.Go) | `.go` | ✅ Fully Supported |
 | **Rust** | [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) | `.rs` | ✅ Fully Supported |
 | **PHP** | [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) | `.php` | ✅ Fully Supported |
-| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=rebornix.ruby) | `.rb` | ✅ Fully Supported |
+| **Ruby** | [Ruby](https://marketplace.visualstudio.com/items?itemName=Shopify.ruby-lsp) | `.rb` | ✅ Fully Supported |
 | **C#/.NET** | [C#](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) | `.cs`, `.csproj` | ✅ Fully Supported |
 
 ## Configuration
@@ -449,7 +449,7 @@ The extension handles debug configurations intelligently:
   - **Go**: [Go extension](vscode:extension/golang.go)
   - **Rust**: [rust-analyzer extension](vscode:extension/rust-lang.rust-analyzer)
   - **PHP**: [PHP Debug extension](vscode:extension/xdebug.php-debug)
-  - **Ruby**: [Ruby extension](vscode:extension/rebornix.ruby) with debug support
+  - **Ruby**: [Ruby extension](vscode:extension/Shopify.ruby-lsp) and the [`debug` gem](https://github.com/ruby/debug)
 - MCP-compatible AI assistant (Copilot, Claude Code, Cline, Cursor, Codex, Windsurf, Roo Code, etc.)
 
 ## Development
