@@ -4,6 +4,11 @@ All notable changes to DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Launch named RSpec examples using exact debugger CodeLens targets; preserve the first stop and the existing Testing API route for other languages.
+
 ## [2.3.5] - 2026-09-09
 
 ### Fixed

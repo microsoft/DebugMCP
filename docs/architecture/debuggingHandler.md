@@ -111,6 +111,10 @@ than being interpreted as successful test completion.
 Expression evaluation also distinguishes an adapter error from a successful
 command whose result/output was not captured.
 
+## RSpec stops
+
+Named RSpec examples use exact debugger CodeLens dispatch. The first stopped frame is returned unchanged; the handler never infers an entry pause from source-breakpoint mismatch or automatically continues it. See [RSpec debugging](../rspec-debugging.md).
+
 ## Variable inspection
 
 For `ruby_lsp` sessions, Ruby scalar values keep their result even when rdbg attaches metadata children. Synthetic `#class` and `%ancestors` children are omitted only for Ruby. Existing secret redaction and names/types-only descendant rendering remain in force.

@@ -96,13 +96,12 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (testName && !hasExplicitConfig) {
                 readyPromise = this.executor.waitForDebugSessionReady(
                     this.timeoutInSeconds * 1000, readinessAbort.signal);
-                // Route through VS Code's Testing API. This works for any language
-                // whose extension registers a TestController and correctly handles
-                // child-process attach for runners like `dotnet test`.
+                // RSpec needs its exact debugger CodeLens. Every other test
+                // retains the original VS Code Testing API dispatch.
                 const dispatch = await this.executor.debugTestAtCursor(fileFullPath, testName);
                 started = dispatch.started;
                 testRunComplete = dispatch.runComplete;
-                configDescription = `testing.debugAtCursor (test: ${testName})`;
+                configDescription = dispatch.description ?? 'testing.debugAtCursor';
             } else {
                 const debugConfig = await this.configManager.getDebugConfig(
                     workingDirectory,

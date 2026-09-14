@@ -38,6 +38,13 @@ VS Code's debug API is powerful but requires careful handling. `DebuggingExecuto
 
 ## Key Concepts
 
+### Single-test dispatch
+
+For `*_spec.rb`, exact example names outrank suffix-only provider names. The requested definition line or containing
+range disambiguates candidates; otherwise ambiguous matches raise an error rather than launching another example. Modern Ruby RSpec CodeLenses omit the launch program, so the executor combines the configured
+RSpec command with the entire `file:line` quoted as one POSIX shell argument and starts `ruby_lsp` directly. Every other language and test type retains
+the original `testing.debugAtCursor` path without CodeLens interception.
+
 ### Startup Failure Diagnostics
 
 `src/utils/debugStartup.ts` observes task lifecycle events before dispatching a

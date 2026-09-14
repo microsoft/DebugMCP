@@ -25,10 +25,10 @@ export interface IDebugConfigurationManager {
  *  - The language extension's DebugConfigurationProvider.resolveDebugConfiguration
  *    (which fills in cwd, console, env, and other defaults for ad-hoc launches)
  *
- * Test launches go through DebuggingExecutor.debugTestAtCursor instead — VS Code's
- * Testing API knows how to debug a specific test for any language whose extension
- * registers a TestController, including the parent/child process handoff that
- * `dotnet test` requires.
+ * Test launches go through DebuggingExecutor.debugTestAtCursor. It uses the
+ * exact RSpec debugger CodeLens for `*_spec.rb` and preserves VS Code's Testing
+ * API for every other test, including the parent/child process handoff required
+ * by `dotnet test`.
  */
 export class DebugConfigurationManager implements IDebugConfigurationManager {
     private static readonly AUTO_LAUNCH_CONFIG = 'Default Configuration';
