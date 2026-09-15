@@ -43,7 +43,10 @@ extension. To avoid debugging the wrong workspace when several windows are open:
 - **Every window** starts a loopback `ControlServer` (`src/controlServer.ts`) that runs
   debug operations against *its own* `DebuggingHandler`, and advertises its workspace
   folders (plus control port + token) in a shared file registry
-  (`src/utils/workspaceRegistry.ts`).
+  (`src/utils/workspaceRegistry.ts`). The registry lives under VS Code's per-user
+  extension storage rather than the system temporary directory. On POSIX systems its
+  directory and entries are restricted to the owning user (`0700` and `0600`), and
+  entries are replaced atomically so a partial credential file is never exposed.
 - **One window** wins the public MCP port and becomes the **router**. Its per-MCP-session
   handler is a `RoutingDebuggingHandler` (`src/routingDebuggingHandler.ts`) that resolves
   the target window from the request's `workingDirectory`/`fileFullPath` and forwards the

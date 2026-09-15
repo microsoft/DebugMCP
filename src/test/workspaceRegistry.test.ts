@@ -52,6 +52,33 @@ suite('WorkspaceRegistry', () => {
 		assert.strictEqual(entries[0].pid, process.pid);
 	});
 
+	test('register stores the token in an owner-only registry on POSIX', function () {
+		if (process.platform === 'win32') {
+			this.skip();
+		}
+
+		const reg = new WorkspaceRegistry(process.pid, dir);
+		reg.register({ controlPort: 1234, controlToken: 'secret', workspaceFolders: [], name: 'A' });
+
+		assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700);
+		assert.strictEqual(fs.statSync(path.join(dir, `window-${process.pid}.json`)).mode & 0o777, 0o600);
+	});
+
+	test('heartbeat repairs an overly permissive registry file on POSIX', function () {
+		if (process.platform === 'win32') {
+			this.skip();
+		}
+
+		const reg = new WorkspaceRegistry(process.pid, dir);
+		reg.register({ controlPort: 1234, controlToken: 'secret', workspaceFolders: [], name: 'A' });
+		const file = path.join(dir, `window-${process.pid}.json`);
+		fs.chmodSync(file, 0o644);
+
+		reg.heartbeat();
+
+		assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+	});
+
 	test('unregister removes the entry', () => {
 		const reg = new WorkspaceRegistry(process.pid, dir);
 		reg.register({ controlPort: 1, controlToken: 't', workspaceFolders: [], name: 'A' });

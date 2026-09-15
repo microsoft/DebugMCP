@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
 import { logger } from './logger';
 
 /** One VS Code window's advertisement in the shared registry. */
@@ -15,11 +15,10 @@ export interface WindowRegistration {
 	updatedAt: number;
 }
 
-/** Default directory holding one JSON file per live window. */
-const DEFAULT_REGISTRY_DIR = path.join(os.tmpdir(), 'debugmcp-registry');
-
 /** Entries not refreshed within this window are considered stale. */
 const STALE_MS = 60_000;
+const REGISTRY_DIR_MODE = 0o700;
+const REGISTRY_FILE_MODE = 0o600;
 
 /** Best-effort pid liveness check (EPERM means the process exists). */
 function isProcessAlive(pid: number): boolean {
@@ -53,30 +52,33 @@ export class WorkspaceRegistry {
 	private readonly registryDir: string;
 	private readonly filePath: string;
 
-	constructor(private readonly pid: number = process.pid, registryDir: string = DEFAULT_REGISTRY_DIR) {
+	constructor(private readonly pid: number = process.pid, registryDir: string) {
 		this.registryDir = registryDir;
 		this.filePath = path.join(this.registryDir, `window-${this.pid}.json`);
+		this.ensureSecureDirectory();
 	}
 
 	/** Write (or overwrite) this window's registration. */
 	public register(reg: Omit<WindowRegistration, 'pid' | 'updatedAt'>): void {
 		try {
-			fs.mkdirSync(this.registryDir, { recursive: true });
 			const entry: WindowRegistration = { ...reg, pid: this.pid, updatedAt: Date.now() };
-			fs.writeFileSync(this.filePath, JSON.stringify(entry), 'utf8');
+			this.writeEntry(entry);
 		} catch (error) {
 			logger.error('Failed to write DebugMCP registry entry', error);
+			throw error;
 		}
 	}
 
 	/** Refresh `updatedAt` so other windows don't prune this one. */
 	public heartbeat(): void {
 		try {
-			const entry = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as WindowRegistration;
+			const entry = this.readEntry(this.filePath);
 			entry.updatedAt = Date.now();
-			fs.writeFileSync(this.filePath, JSON.stringify(entry), 'utf8');
-		} catch {
-			// Entry missing — caller re-registers on change.
+			this.writeEntry(entry);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+				logger.error('Failed to refresh DebugMCP registry entry', error);
+			}
 		}
 	}
 
@@ -87,6 +89,7 @@ export class WorkspaceRegistry {
 
 	/** All live windows, pruning dead-pid and stale entries as a side effect. */
 	public list(): WindowRegistration[] {
+		this.ensureSecureDirectory();
 		let files: string[];
 		try {
 			files = fs.readdirSync(this.registryDir);
@@ -100,7 +103,7 @@ export class WorkspaceRegistry {
 			}
 			const full = path.join(this.registryDir, file);
 			try {
-				const entry = JSON.parse(fs.readFileSync(full, 'utf8')) as WindowRegistration;
+				const entry = this.readEntry(full);
 				const isStale = Date.now() - entry.updatedAt > STALE_MS;
 				if (!isProcessAlive(entry.pid) || (isStale && entry.pid !== this.pid)) {
 					this.tryUnlink(full);
@@ -142,6 +145,60 @@ export class WorkspaceRegistry {
 			return entries[0];
 		}
 		return best;
+	}
+
+	private ensureSecureDirectory(): void {
+		fs.mkdirSync(this.registryDir, { recursive: true, mode: REGISTRY_DIR_MODE });
+		const stats = fs.lstatSync(this.registryDir);
+		if (stats.isSymbolicLink() || !stats.isDirectory()) {
+			throw new Error(`DebugMCP registry path is not a secure directory: ${this.registryDir}`);
+		}
+		this.assertOwnedByCurrentUser(stats, this.registryDir);
+		if (process.platform !== 'win32') {
+			fs.chmodSync(this.registryDir, REGISTRY_DIR_MODE);
+		}
+	}
+
+	private readEntry(full: string): WindowRegistration {
+		const stats = fs.lstatSync(full);
+		if (stats.isSymbolicLink() || !stats.isFile()) {
+			throw new Error(`DebugMCP registry entry is not a regular file: ${full}`);
+		}
+		this.assertOwnedByCurrentUser(stats, full);
+		if (process.platform !== 'win32') {
+			fs.chmodSync(full, REGISTRY_FILE_MODE);
+		}
+		return JSON.parse(fs.readFileSync(full, 'utf8')) as WindowRegistration;
+	}
+
+	private writeEntry(entry: WindowRegistration): void {
+		this.ensureSecureDirectory();
+		const temporaryPath = path.join(
+			this.registryDir,
+			`.${path.basename(this.filePath)}.${randomUUID()}.tmp`
+		);
+		try {
+			fs.writeFileSync(temporaryPath, JSON.stringify(entry), {
+				encoding: 'utf8',
+				flag: 'wx',
+				mode: REGISTRY_FILE_MODE
+			});
+			if (process.platform !== 'win32') {
+				fs.chmodSync(temporaryPath, REGISTRY_FILE_MODE);
+			}
+			fs.renameSync(temporaryPath, this.filePath);
+			if (process.platform !== 'win32') {
+				fs.chmodSync(this.filePath, REGISTRY_FILE_MODE);
+			}
+		} finally {
+			this.tryUnlink(temporaryPath);
+		}
+	}
+
+	private assertOwnedByCurrentUser(stats: fs.Stats, full: string): void {
+		if (typeof process.getuid === 'function' && stats.uid !== process.getuid()) {
+			throw new Error(`DebugMCP registry path is not owned by the current user: ${full}`);
+		}
 	}
 
 	private tryUnlink(full: string): void {

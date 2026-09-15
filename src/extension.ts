@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { randomUUID } from 'node:crypto';
 import { DebugMCPServer } from './debugMCPServer';
 import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
@@ -72,7 +73,8 @@ export async function activate(context: vscode.ExtensionContext) {
         controlServer = new ControlServer(localHandler, controlToken);
         const controlPort = await controlServer.start();
 
-        registry = new WorkspaceRegistry();
+        const registryDir = path.join(context.globalStorageUri.fsPath, 'window-registry');
+        registry = new WorkspaceRegistry(process.pid, registryDir);
         const registerSelf = () => {
             registry?.register({
                 controlPort,
