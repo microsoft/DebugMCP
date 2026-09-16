@@ -47,6 +47,8 @@ initialize/launch/configuration sequence, handles adapter events and
 Step operations wait for a fresh stopped or terminated event. Continue allows a
 short stop-event grace period so immediately reached breakpoints are reported,
 while still returning promptly for long-running programs.
+Closing an MCP session disposes its standalone executor, adapter process, and
+any debuggee processes started through reverse `runInTerminal` requests.
 `src/cli/adapterConfig.ts` loads project and user registrations. No adapter is
 registered, discovered, selected, installed, or upgraded implicitly.
 

@@ -45,6 +45,10 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 		if (this.client && this.state !== 'terminated') {
 			throw new Error('A debug session is already active. Stop it before starting another.');
 		}
+		if (this.client) {
+			await this.client.close();
+			this.client = undefined;
+		}
 
 		this.state = 'starting';
 		this.threadId = undefined;
@@ -82,7 +86,11 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 
 			const { adapter: _adapter, adapterName: _adapterName, ...launchArguments } = cliConfig;
 			const launch = client.request(cliConfig.request, launchArguments);
-			await initializedEvent;
+			const launchRejected = launch.then(
+				() => new Promise<never>(() => {}),
+				error => Promise.reject(error)
+			);
+			await Promise.race([initializedEvent, launchRejected]);
 			this.initialized = true;
 			await this.syncAllBreakpoints();
 			if (this.capabilities.supportsConfigurationDoneRequest === true) {
@@ -96,6 +104,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			return true;
 		} catch (error) {
 			await client.close();
+			this.client = undefined;
 			this.state = 'terminated';
 			this.emitState();
 			throw new Error(`Failed to start standalone debug session: ${error}`);
@@ -124,6 +133,18 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			this.frameId = undefined;
 			this.emitState();
 		}
+	}
+
+	public async dispose(): Promise<void> {
+		const client = this.client;
+		this.client = undefined;
+		if (client) {
+			await client.close();
+		}
+		this.state = 'terminated';
+		this.threadId = undefined;
+		this.frameId = undefined;
+		this.emitState();
 	}
 
 	public async stepOver(): Promise<void> {

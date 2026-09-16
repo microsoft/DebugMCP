@@ -77,4 +77,22 @@ suite('Copilot CLI DebugMCP host selection', () => {
 			tools: ['*']
 		});
 	});
+
+	test('rejects registrations that mix HTTP and stdio fields', async () => {
+		await fs.promises.writeFile(configPath, JSON.stringify({
+			mcpServers: {
+				debugmcp: {
+					type: 'stdio',
+					command: 'node',
+					args: [],
+					tools: ['*'],
+					url: 'http://localhost:3001/mcp'
+				}
+			}
+		}), 'utf8');
+		await assert.rejects(
+			() => readCopilotDebugMcpHost(configPath),
+			/cannot contain url/
+		);
+	});
 });

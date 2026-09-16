@@ -24,7 +24,8 @@ const adapterLanguages: Record<string, AdapterLanguage> = {
 
 export function createShorthandAdapter(
 	language: string,
-	commandValues: string[]
+	commandValues: string[],
+	adapterArgs: string[] = []
 ): AdapterRegistration {
 	const metadata = adapterLanguages[language.toLowerCase()];
 	if (!metadata) {
@@ -44,7 +45,7 @@ export function createShorthandAdapter(
 
 	return {
 		command,
-		args,
+		args: [...args, ...adapterArgs],
 		type: metadata.type,
 		extensions: [...metadata.extensions],
 		transport: 'stdio'

@@ -24,6 +24,41 @@ suite('CLI adapter shorthand', () => {
 		);
 	});
 
+	test('preserves separately tokenized command values', () => {
+		assert.deepStrictEqual(
+			createShorthandAdapter('python', ['python', '-m', 'debugpy.adapter']),
+			{
+				command: 'python',
+				args: ['-m', 'debugpy.adapter'],
+				type: 'python',
+				extensions: ['.py'],
+				transport: 'stdio'
+			}
+		);
+	});
+
+	test('appends explicitly separated adapter arguments', () => {
+		assert.deepStrictEqual(
+			createShorthandAdapter(
+				'csharp',
+				['netcoredbg'],
+				['--interpreter=vscode']
+			),
+			{
+				command: 'netcoredbg',
+				args: ['--interpreter=vscode'],
+				type: 'coreclr',
+				extensions: ['.cs'],
+				transport: 'stdio'
+			}
+		);
+	});
+
+	test('rejects malformed or empty command lines', () => {
+		assert.throws(() => splitCommandLine('"unterminated'), /unterminated quote/);
+		assert.throws(() => createShorthandAdapter('python', ['   ']), /requires --command/);
+	});
+
 	test('derives compiled-language metadata', () => {
 		assert.deepStrictEqual(
 			createShorthandAdapter('csharp', ['vsdbg --interpreter=vscode']),

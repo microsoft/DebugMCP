@@ -29,28 +29,7 @@ import {
 } from './agentSelector';
 import { getSupportedAgents } from '../utils/agentCatalog';
 import { createShorthandAdapter } from './adapterShorthand';
-
-interface ParsedOptions {
-	values: Record<string, string[]>;
-	positionals: string[];
-}
-
-function parseOptions(args: string[]): ParsedOptions {
-	const values: Record<string, string[]> = {};
-	const positionals: string[] = [];
-	let current: string | undefined;
-	for (const arg of args) {
-		if (arg.startsWith('--')) {
-			current = arg.slice(2);
-			values[current] ??= [];
-		} else if (current) {
-			values[current].push(arg);
-		} else {
-			positionals.push(arg);
-		}
-	}
-	return { values, positionals };
-}
+import { ParsedOptions, parseOptions } from './cliOptions';
 
 function first(options: ParsedOptions, name: string): string | undefined {
 	return options.values[name]?.[0];
@@ -96,7 +75,7 @@ async function printStatus(): Promise<void> {
 }
 
 async function configureAgents(args: string[]): Promise<void> {
-	const options = parseOptions(args);
+	const options = parseOptions(args, ['agent']);
 	const requestedAgents = options.values.agent ?? [];
 	const agents = requestedAgents.length > 0
 		? resolveAgentSelections(requestedAgents, getSupportedAgents())
@@ -114,7 +93,10 @@ async function configureAgents(args: string[]): Promise<void> {
 
 async function runAdapterCommand(args: string[]): Promise<void> {
 	const action = args[0];
-	const options = parseOptions(args.slice(1));
+	const options = parseOptions(
+		args.slice(1),
+		['user', 'command', 'type', 'extensions', 'args', 'launch']
+	);
 	const name = options.positionals[0];
 	const cwd = process.cwd();
 	const configPath = flag(options, 'user') ? getUserConfigPath() : getProjectConfigPath(cwd);
@@ -172,7 +154,7 @@ async function runAdapterCommand(args: string[]): Promise<void> {
 				launch
 			}
 			: {
-				...createShorthandAdapter(name, commandValues),
+				...createShorthandAdapter(name, commandValues, options.values.args),
 				...(launch ? { launch } : {})
 			};
 		validateAdapter(name, adapter);
@@ -214,7 +196,7 @@ async function validateAdapterProcess(
 	cwd: string
 ): Promise<void> {
 	validateAdapter(name, adapter);
-	const client = new DapClient(adapter.command, adapter.args ?? [], cwd, 10_000);
+	const client = new DapClient(adapter.command, adapter.args ?? [], cwd, 30_000);
 	try {
 		await client.request('initialize', {
 			clientID: 'debugmcp-validator',
@@ -229,7 +211,7 @@ async function validateAdapterProcess(
 }
 
 async function runServer(args: string[]): Promise<void> {
-	const options = parseOptions(args);
+	const options = parseOptions(args, ['stdio', 'port', 'timeout']);
 	const timeout = Number(first(options, 'timeout') ?? '300');
 	const port = Number(first(options, 'port') ?? '3001');
 	if (!Number.isFinite(timeout) || timeout <= 0) {

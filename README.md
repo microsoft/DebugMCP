@@ -133,6 +133,10 @@ object. If multiple registered adapters claim the same file extension,
 discovery remains host-specific; configure the adapter launch properties to run
 the required test command.
 
+Adapter arguments beginning with `--` can follow `--args` directly. Use a
+standalone `--` after `--args` when an adapter argument has the same name as a
+DebugMCP option, for example `--args -- --user`.
+
 `debugmcp configure` presents the same agent choices as the VS Code extension's
 setup popup and writes the standalone stdio command for every selected agent.
 In automation, repeat `--agent <id>` to bypass the terminal prompt, for example

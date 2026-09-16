@@ -35,6 +35,7 @@ export interface IDebuggingHandler {
     handleListVariableNames(args?: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
     handleGetDebugStatus(args?: { waitForPauseSeconds?: number }): Promise<string>;
+    dispose?(): Promise<void> | void;
 }
 
 /**
@@ -68,6 +69,10 @@ export class DebuggingHandler implements IDebuggingHandler {
         timeoutInSeconds: number
     ) {
         this.timeoutInSeconds = timeoutInSeconds;
+    }
+
+    public async dispose(): Promise<void> {
+        await this.executor.dispose?.();
     }
 
     /**

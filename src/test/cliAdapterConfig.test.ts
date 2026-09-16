@@ -8,6 +8,7 @@ import { CliConfigurationManager } from '../cli/cliConfigurationManager';
 import {
 	AdapterConfigFile,
 	getProjectConfigPath,
+	getUserConfigPath,
 	loadAdapters,
 	writeAdapterConfig
 } from '../cli/adapterConfig';
@@ -68,6 +69,32 @@ suite('CLI adapter configuration', () => {
 		assert.strictEqual(resolved.program, path.join(workspace, 'app.py'));
 	});
 
+	test('project registration overrides a same-name user adapter', async () => {
+		await writeAdapterConfig(getUserConfigPath(), {
+			version: 1,
+			adapters: {
+				python: {
+					command: 'user-python',
+					type: 'python',
+					extensions: ['.py']
+				}
+			}
+		});
+		await writeAdapterConfig(getProjectConfigPath(workspace), {
+			version: 1,
+			adapters: {
+				python: {
+					command: 'project-python',
+					type: 'python',
+					extensions: ['.py']
+				}
+			}
+		});
+
+		const adapters = await loadAdapters(workspace);
+		assert.strictEqual(adapters.python.command, 'project-python');
+	});
+
 	test('expands a compiled adapter launch target', async () => {
 		await writeAdapterConfig(getProjectConfigPath(workspace), {
 			version: 1,
@@ -78,6 +105,7 @@ suite('CLI adapter configuration', () => {
 					extensions: ['.cs'],
 					launch: {
 						program: '${workspaceFolder}\\bin\\Calculator.exe',
+						args: ['${file}', '${fileBasenameNoExtension}'],
 						sourceFileMap: {
 							'/source': '${fileDirname}'
 						}
@@ -92,6 +120,7 @@ suite('CLI adapter configuration', () => {
 		assert.deepStrictEqual(resolved.sourceFileMap, {
 			'/source': workspace
 		});
+		assert.deepStrictEqual(resolved.args, [source, 'Calculator']);
 	});
 
 	test('requires a name when multiple adapters claim an extension', async () => {

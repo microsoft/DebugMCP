@@ -188,6 +188,13 @@ export class DapClient extends EventEmitter {
 				windowsHide: true
 			});
 			this.debuggees.add(child);
+			await new Promise<void>((resolve, reject) => {
+				child.once('spawn', resolve);
+				child.once('error', error => {
+					this.debuggees.delete(child);
+					reject(error);
+				});
+			});
 			child.once('exit', () => this.debuggees.delete(child));
 			child.stdout?.on('data', chunk => logger.info(`debuggee: ${String(chunk).trimEnd()}`));
 			child.stderr?.on('data', chunk => logger.warn(`debuggee: ${String(chunk).trimEnd()}`));

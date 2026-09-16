@@ -153,7 +153,7 @@ export class DebugMCPServer {
      * Build a fresh McpServer with all tools registered.
      * Called once per session, when an `initialize` request opens it.
      */
-    private createMcpServer(): McpServer {
+    private createMcpServer(debuggingHandler = this.handlerFactory()): McpServer {
         const server = new McpServer({
             name: 'debugmcp',
             version: '1.0.0',
@@ -167,7 +167,7 @@ export class DebugMCPServer {
                 'investigation workflow using the debugger, including breakpoint strategy, step-and-inspect ' +
                 'pattern and root-cause guidance.',
         });
-        this.setupTools(server, this.handlerFactory());
+        this.setupTools(server, debuggingHandler);
         return server;
     }
 
@@ -338,9 +338,22 @@ export class DebugMCPServer {
     }
 
     public async startStdio(): Promise<void> {
-        const server = this.createMcpServer();
-        await server.connect(new StdioServerTransport());
+        const debuggingHandler = this.handlerFactory();
+        const server = this.createMcpServer(debuggingHandler);
+        const transport = new StdioServerTransport();
+        transport.onclose = () => {
+            void this.disposeHandler(debuggingHandler);
+        };
+        await server.connect(transport);
         logger.info('DebugMCP CLI listening on stdio');
+    }
+
+    private async disposeHandler(handler: IDebuggingHandler): Promise<void> {
+        try {
+            await handler.dispose?.();
+        } catch (error) {
+            logger.warn('Error disposing MCP debugging handler', error);
+        }
     }
 
     /**
@@ -473,6 +486,7 @@ export class DebugMCPServer {
                     } else if (!sessionId && isInitializeRequest(req.body)) {
                         // Brand-new session: build a transport + server and register it
                         // once the SDK assigns a session id.
+                        const debuggingHandler = this.handlerFactory();
                         transport = new StreamableHTTPServerTransport({
                             sessionIdGenerator: () => randomUUID(),
                             onsessioninitialized: (sid: string) => {
@@ -486,8 +500,9 @@ export class DebugMCPServer {
                                 delete this.transports[sid];
                                 logger.info(`MCP session closed: ${sid}`);
                             }
+                            void this.disposeHandler(debuggingHandler);
                         };
-                        const server = this.createMcpServer();
+                        const server = this.createMcpServer(debuggingHandler);
                         await server.connect(transport);
                     } else {
                         // No session id and not an initialize request — invalid.

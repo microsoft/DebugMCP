@@ -128,4 +128,72 @@ process.stdin.on('data', chunk => {
 		assert.strictEqual(continuedState.currentLine, 4);
 		await executor.stopDebugging();
 	});
+
+	test('reports launch rejection without waiting for initialized', async () => {
+		const sourcePath = path.join(directory, 'app.fake');
+		const adapterPath = path.join(directory, 'rejecting-adapter.js');
+		await fs.promises.writeFile(sourcePath, 'run();\n', 'utf8');
+		await fs.promises.writeFile(adapterPath, `
+let buffer = Buffer.alloc(0);
+let sequence = 1;
+function send(message) {
+	const payload = Buffer.from(JSON.stringify({ seq: sequence++, ...message }));
+	process.stdout.write('Content-Length: ' + payload.length + '\\r\\n\\r\\n');
+	process.stdout.write(payload);
+}
+process.stdin.on('data', chunk => {
+	buffer = Buffer.concat([buffer, chunk]);
+	while (true) {
+		const headerEnd = buffer.indexOf('\\r\\n\\r\\n');
+		if (headerEnd < 0) return;
+		const length = Number(/Content-Length:\\s*(\\d+)/i.exec(
+			buffer.subarray(0, headerEnd).toString('ascii')
+		)[1]);
+		const start = headerEnd + 4;
+		if (buffer.length < start + length) return;
+		const request = JSON.parse(buffer.subarray(start, start + length).toString('utf8'));
+		buffer = buffer.subarray(start + length);
+		if (request.command === 'initialize') {
+			send({
+				type: 'response',
+				request_seq: request.seq,
+				command: request.command,
+				success: true,
+				body: {}
+			});
+		} else if (request.command === 'launch') {
+			send({
+				type: 'response',
+				request_seq: request.seq,
+				command: request.command,
+				success: false,
+				message: 'invalid launch target'
+			});
+		}
+	}
+});
+`, 'utf8');
+
+		const executor = new CliDebuggingExecutor();
+		const config: CliDebugConfiguration = {
+			name: 'fake',
+			type: 'fake',
+			request: 'launch',
+			program: sourcePath,
+			adapterName: 'fake',
+			adapter: {
+				command: process.execPath,
+				args: [adapterPath],
+				type: 'fake',
+				extensions: ['.fake']
+			}
+		};
+		const startedAt = Date.now();
+		await assert.rejects(
+			() => executor.startDebugging(directory, config),
+			/invalid launch target/
+		);
+		assert.ok(Date.now() - startedAt < 5_000);
+		await executor.dispose();
+	});
 });

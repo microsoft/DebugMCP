@@ -51,6 +51,7 @@ export interface IDebuggingExecutor {
     getActiveSession(): DebugSessionInfo | undefined;
     getActiveFrameId?(): number | undefined;
     waitForDebugSessionReady(timeoutMs: number, signal?: AbortSignal): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
+    dispose?(): Promise<void> | void;
 }
 
 /**

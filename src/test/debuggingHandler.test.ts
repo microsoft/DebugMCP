@@ -207,6 +207,19 @@ suite('DebuggingHandler waitForStateChange (event-driven)', () => {
         assert.ok(elapsed >= 200, `should wait for the ~300ms timeout, only took ${elapsed}ms`);
         assert.ok(elapsed < 3000, `timeout should bound the wait, took ${elapsed}ms`);
     });
+
+    test('dispose forwards cleanup to the executor', async () => {
+        const executor = makeExecutor(() => lineState(10));
+        let disposeCalls = 0;
+        executor.dispose = async () => {
+            disposeCalls++;
+        };
+        const handler = new DebuggingHandler(executor, {} as any, 30);
+
+        await handler.dispose();
+
+        assert.strictEqual(disposeCalls, 1);
+    });
 });
 
 /**
