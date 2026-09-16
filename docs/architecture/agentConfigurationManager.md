@@ -95,7 +95,12 @@ The `debug-live` Agent Skill is installed into the **standard personal skills di
 - **`~/.agents/skills/debug-live/`** — the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode and Copilot CLI. Always installed.
 - **`~/.copilot/skills/debug-live/`** — Copilot's own skills path; also installed when a Copilot home directory (`~/.copilot`, or `$COPILOT_HOME`) exists.
 
-`installDebugMCPSkill()` copies the one bundled source (`skills/debug-live/SKILL.md`) into each target with `force: true` (idempotent refresh) and removes stale legacy copies (`debug`, `really-debug`). It is agent-independent — a single shared install covers every skills-compatible harness.
+The shared installer in `src/utils/debugSkillInstaller.ts` copies the one bundled
+source (`skills/debug-live/`) into each target with `force: true` (idempotent
+refresh) and removes stale legacy copies (`debug`, `really-debug`). Both the VS
+Code extension and standalone CLI use this installer. The npm package includes
+the complete skill tree, and `debugmcp configure` installs it while registering
+the selected agents.
 
 This fixes issue #105: earlier builds copied the skill next to each agent's config (e.g. `Code/User/skills/` for VS Code Copilot), a directory no harness scans, so the skill never loaded. Installing to `~/.agents/skills/` — which VS Code agent mode does scan — makes it discoverable.
 
@@ -104,7 +109,9 @@ This fixes issue #105: earlier builds copied the skill next to each agent's conf
 - Class definition: `src/utils/agentConfigurationManager.ts`
 - Agent definitions: `getSupportedAgents()`
 - Config writing: `addDebugMCPToAgent()`
-- Skill install: `installDebugMCPSkill()` / `getSkillInstallTargets()` / `ensureSkillRegistered()`
+- Shared skill install: `src/utils/debugSkillInstaller.ts`
+- Extension skill orchestration: `installDebugMCPSkill()` / `ensureSkillRegistered()`
+- Standalone skill orchestration: `src/cli/main.ts` (`configureAgents()`)
 - Codex TOML upsert: `upsertCodexDebugMCPConfig()`
 - Path detection: `getConfigBasePath()`
 - Popup logic: `shouldShowPopup()`, `showAgentSelectionPopup()`

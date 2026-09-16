@@ -1,6 +1,6 @@
 {
   "name": "debugmcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone MCP debugger host for explicitly configured Debug Adapter Protocol adapters.",
   "license": "MIT",
   "author": "Microsoft Corporation",
@@ -25,6 +25,7 @@
   },
   "files": [
     "dist/debugmcp.js",
+    "skills/debug-live",
     "README.md",
     "LICENSE.txt"
   ],

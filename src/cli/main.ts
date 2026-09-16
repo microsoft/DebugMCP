@@ -28,6 +28,10 @@ import {
 	selectAgentsInteractively
 } from './agentSelector';
 import { getSupportedAgents } from '../utils/agentCatalog';
+import {
+	getDebugSkillInstallTargets,
+	installDebugSkill
+} from '../utils/debugSkillInstaller';
 import { createShorthandAdapter } from './adapterShorthand';
 import { ParsedOptions, parseOptions } from './cliOptions';
 
@@ -87,6 +91,11 @@ async function configureAgents(args: string[]): Promise<void> {
 		process.stdout.write(
 			`Configured ${agent.displayName} for the standalone DebugMCP CLI in ${agent.configPath}.\n`
 		);
+	}
+	const bundledSkillPath = path.resolve(__dirname, '..', 'skills', 'debug-live');
+	for (const destination of getDebugSkillInstallTargets()) {
+		await installDebugSkill(bundledSkillPath, destination);
+		process.stdout.write(`Installed debug-live skill in ${destination}.\n`);
 	}
 	process.stdout.write('Restart the selected agents to load DebugMCP.\n');
 }

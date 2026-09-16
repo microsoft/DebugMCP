@@ -18,6 +18,10 @@ Configure GitHub Copilot CLI once:
 debugmcp configure --agent copilot-cli
 ```
 
+This also installs the bundled `debug-live` skill into the standard personal
+skills directories. Restart the agent after configuration so it discovers the
+skill.
+
 ## Configure a project
 
 DebugMCP does not discover, install, or choose debugger installations. Register

@@ -143,6 +143,8 @@ In automation, repeat `--agent <id>` to bypass the terminal prompt, for example
 `debugmcp configure --agent copilot-cli --agent codex`. Each configuration has
 one canonical `debugmcp` entry, so configuring the CLI replaces an existing
 extension HTTP entry rather than registering both.
+The command also installs the bundled `debug-live` skill into the standard
+personal skills directories. Restart configured agents to discover it.
 
 Use `debugmcp status` to inspect the GitHub Copilot CLI registration. The
 DebugMCP command configures only the standalone CLI. To use the interactive

@@ -3,13 +3,16 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import {
     AgentInfo,
     getSupportedAgents,
     JsonAgentInfo,
     TomlAgentInfo
 } from './agentCatalog';
+import {
+    getDebugSkillInstallTargets,
+    installDebugSkill
+} from './debugSkillInstaller';
 import { selectCopilotDebugMcpHost } from '../cli/copilotMcpConfig';
 export { AgentInfo, JsonAgentInfo, TomlAgentInfo } from './agentCatalog';
 
@@ -167,26 +170,6 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Get cross-platform configuration base path
-     */
-    /**
-     * Personal skill install targets, following the Agent Skills open standard
-     * (agentskills.io). `~/.agents/skills/` is the cross-agent location honored
-     * by skills-compatible harnesses (including VS Code agent mode and Copilot
-     * CLI); we also install into `~/.copilot/skills/` when a Copilot home exists.
-     * See issue #105.
-     */
-    private getSkillInstallTargets(): string[] {
-        const home = os.homedir();
-        const targets = [path.join(home, '.agents', 'skills', 'debug-live')];
-        const copilotHome = process.env.COPILOT_HOME || path.join(home, '.copilot');
-        if (fs.existsSync(copilotHome)) {
-            targets.push(path.join(copilotHome, 'skills', 'debug-live'));
-        }
-        return targets;
-    }
-
-    /**
      * Path to the debugmcp skill bundled with the extension.
      */
     private getBundledSkillPath(): string {
@@ -210,13 +193,10 @@ export class AgentConfigurationManager {
         }
 
         let primaryDestination: string | null = null;
-        for (const destination of this.getSkillInstallTargets()) {
-            const skillsDir = path.dirname(destination);
+        for (const destination of getDebugSkillInstallTargets()) {
             try {
-                await fs.promises.mkdir(skillsDir, { recursive: true });
-                await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
+                await installDebugSkill(bundledSkillPath, destination);
                 console.log(`Installed debugmcp skill at ${destination}`);
-                await this.removeLegacySkills(skillsDir);
                 if (!primaryDestination) {
                     primaryDestination = destination;
                 }
@@ -226,28 +206,6 @@ export class AgentConfigurationManager {
         }
 
         return primaryDestination;
-    }
-
-    /**
-     * Remove stale skill copies from earlier builds (`debug` in 1.2.0, later
-     * `really-debug`) so users don't end up with competing entries alongside
-     * the current `debug-live` skill.
-     */
-    private async removeLegacySkills(skillsDir: string): Promise<void> {
-        const legacyDestinations = [
-            path.join(skillsDir, 'debug'),
-            path.join(skillsDir, 'really-debug'),
-        ];
-        for (const legacyDestination of legacyDestinations) {
-            if (fs.existsSync(legacyDestination)) {
-                try {
-                    await fs.promises.rm(legacyDestination, { recursive: true, force: true });
-                    console.log(`Removed legacy debugmcp skill at ${legacyDestination}`);
-                } catch (cleanupError) {
-                    console.warn(`Failed to remove legacy debugmcp skill at ${legacyDestination}:`, cleanupError);
-                }
-            }
-        }
     }
 
     /**
