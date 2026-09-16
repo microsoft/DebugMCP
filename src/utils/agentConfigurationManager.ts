@@ -4,25 +4,14 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-export interface BaseAgentInfo {
-    id: string;
-    name: string;
-    displayName: string;
-    configPath: string;
-    configFormat: 'json' | 'toml';
-}
-
-export interface JsonAgentInfo extends BaseAgentInfo {
-    configFormat: 'json';
-    mcpServerFieldName: string; 
-}
-
-export interface TomlAgentInfo extends BaseAgentInfo {
-    configFormat: 'toml';
-}
-
-export type AgentInfo = JsonAgentInfo | TomlAgentInfo;
+import {
+    AgentInfo,
+    getSupportedAgents,
+    JsonAgentInfo,
+    TomlAgentInfo
+} from './agentCatalog';
+import { selectCopilotDebugMcpHost } from '../cli/copilotMcpConfig';
+export { AgentInfo, JsonAgentInfo, TomlAgentInfo } from './agentCatalog';
 
 export interface MCPServerConfig {
     type: string;
@@ -180,34 +169,6 @@ export class AgentConfigurationManager {
     /**
      * Get cross-platform configuration base path
      */
-    private getConfigBasePath(): string {
-        const platform = os.platform();
-        const userHome = os.homedir();
-        
-        switch (platform) {
-            case 'win32': // Windows
-                return process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
-            case 'darwin': // MacOS
-                return path.join(userHome, 'Library', 'Application Support');
-            case 'linux': // Linux
-                return process.env.XDG_CONFIG_HOME || path.join(userHome, '.config');
-            default:
-                // Fallback to Windows-style for unknown platforms
-                console.warn(`Unknown platform: ${platform}, using Windows config path`);
-                return process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
-        }
-    }
-
-    private getCodexConfigPath(): string {
-        const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-        return path.join(codexHome, 'config.toml');
-    }
-
-    private getCopilotCliConfigPath(): string {
-        const copilotHome = process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot');
-        return path.join(copilotHome, 'mcp-config.json');
-    }
-
     /**
      * Personal skill install targets, following the Agent Skills open standard
      * (agentskills.io). `~/.agents/skills/` is the cross-agent location honored
@@ -293,82 +254,7 @@ export class AgentConfigurationManager {
      * Get list of supported agents
      */
     private async getSupportedAgents(): Promise<AgentInfo[]> {
-        const configBasePath = this.getConfigBasePath();
-        const platform = os.platform();
-        
-        console.log(`Detected platform: ${platform}, using config base path: ${configBasePath}`);
-        
-        const agents: AgentInfo[] = [
-            {
-                id: 'cline',
-                name: 'cline',
-                displayName: 'Cline',
-                configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'settings', 'cline_mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'roo',
-                name: 'roo',
-                displayName: 'Roo Code',
-                configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline', 'settings', 'mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'copilot',
-                name: 'copilot',
-                displayName: 'GitHub Copilot',
-                configPath: path.join(configBasePath, 'Code', 'User', 'mcp.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'servers'
-            },
-            {
-                id: 'copilot-cli',
-                name: 'copilot-cli',
-                displayName: 'GitHub Copilot CLI',
-                configPath: this.getCopilotCliConfigPath(),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'cursor',
-                name: 'cursor',
-                displayName: 'Cursor',
-                configPath: path.join(configBasePath, 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'settings', 'mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'antigravity',
-                name: 'antigravity',
-                displayName: 'Antigravity',
-                configPath: path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'claude-code',
-                name: 'claude-code',
-                displayName: 'Claude Code',
-                // User-scope MCP servers live under the top-level `mcpServers` field of
-                // ~/.claude.json (shared across projects), distinct from the per-project
-                // `projects.<path>.mcpServers` entries Claude Code also stores there.
-                // See https://code.claude.com/docs/en/mcp.
-                configPath: path.join(os.homedir(), '.claude.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'codex',
-                name: 'codex',
-                displayName: 'Codex',
-                configPath: this.getCodexConfigPath(),
-                configFormat: 'toml'
-            }
-        ];
-
-        return agents;
+        return getSupportedAgents();
     }
 
     /**
@@ -573,11 +459,19 @@ export class AgentConfigurationManager {
 
             const fieldName = agent.mcpServerFieldName;
             try {
-                await upsertJsonDebugMCPConfigFile(
-                    agent.configPath,
-                    fieldName,
-                    this.getDebugMCPConfig(agent)
-                );
+                if (agent.id === 'copilot-cli') {
+                    await selectCopilotDebugMcpHost(agent.configPath, {
+                        type: 'http',
+                        url: this.getMCPServerUrl(),
+                        tools: ['*']
+                    });
+                } else {
+                    await upsertJsonDebugMCPConfigFile(
+                        agent.configPath,
+                        fieldName,
+                        this.getDebugMCPConfig(agent)
+                    );
+                }
             } catch (error) {
                 if (!(error instanceof SyntaxError)) {
                     throw error;

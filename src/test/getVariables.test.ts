@@ -12,6 +12,7 @@ import { IDebuggingExecutor } from '../debuggingExecutor';
 function makeExecutor(scopes: any[]): IDebuggingExecutor {
     return {
         hasActiveSession: async () => true,
+        getActiveFrameId: () => 1,
         getVariables: async () => ({ scopes })
     } as unknown as IDebuggingExecutor;
 }

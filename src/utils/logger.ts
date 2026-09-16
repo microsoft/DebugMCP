@@ -1,7 +1,5 @@
 // Copyright (c) Microsoft Corporation.
 
-import * as vscode from 'vscode';
-
 export enum LogLevel {
     DEBUG = 0,
     INFO = 1,
@@ -9,14 +7,27 @@ export enum LogLevel {
     ERROR = 3
 }
 
+export interface LogSink {
+    debug(message: string): void;
+    info(message: string): void;
+    warn(message: string): void;
+    error(message: string): void;
+    show?(): void;
+}
+
+const stderrSink: LogSink = {
+    debug: message => process.stderr.write(`[debug] ${message}\n`),
+    info: message => process.stderr.write(`[info] ${message}\n`),
+    warn: message => process.stderr.write(`[warn] ${message}\n`),
+    error: message => process.stderr.write(`[error] ${message}\n`)
+};
+
 export class Logger {
     private static instance: Logger;
-    private outputChannel: vscode.LogOutputChannel;
+    private outputChannel: LogSink = stderrSink;
     private logLevel: LogLevel = LogLevel.INFO;
 
-    private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('DebugMCP', { log: true });
-    }
+    private constructor() {}
 
     public static getInstance(): Logger {
         if (!Logger.instance) {
@@ -81,9 +92,15 @@ export class Logger {
         this.info(`Log level set to ${LogLevel[level]}`);
     }
 
-    public logSystemInfo(): void {
+    public setSink(sink: LogSink): void {
+        this.outputChannel = sink;
+    }
+
+    public logSystemInfo(hostVersion?: string): void {
         this.info('=== System Information ===');
-        this.info(`VS Code Version: ${vscode.version}`);
+        if (hostVersion) {
+            this.info(`Host Version: ${hostVersion}`);
+        }
         this.info(`Platform: ${process.platform}`);
         this.info(`Architecture: ${process.arch}`);
         this.info(`Node.js Version: ${process.version}`);
@@ -101,7 +118,7 @@ export class Logger {
     }
 
     public show(): void {
-        this.outputChannel.show();
+        this.outputChannel.show?.();
     }
 }
 

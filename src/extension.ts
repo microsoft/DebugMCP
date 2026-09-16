@@ -23,9 +23,12 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const ROUTER_RETRY_INTERVAL_MS = 5_000;
 
 export async function activate(context: vscode.ExtensionContext) {
+    const outputChannel = vscode.window.createOutputChannel('DebugMCP', { log: true });
+    context.subscriptions.push(outputChannel);
+    logger.setSink(outputChannel);
     // Initialize logging first
     logger.info('DebugMCP extension is now active!');
-    logger.logSystemInfo();
+    logger.logSystemInfo(`VS Code ${vscode.version}`);
     logger.logEnvironment();
 
     const config = vscode.workspace.getConfiguration('debugmcp');

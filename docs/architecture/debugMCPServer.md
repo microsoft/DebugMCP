@@ -2,11 +2,15 @@
 
 ## Purpose
 
-The MCP server component that exposes VS Code debugging capabilities to AI agents via the Model Context Protocol. This is the main entry point for all external AI agent communication.
+The MCP server component that exposes debugging capabilities to AI agents via
+the Model Context Protocol. It is shared by the VS Code extension and the
+standalone CLI.
 
 ## Motivation
 
-AI coding agents need a standardized way to control debuggers programmatically. MCP provides this standard, and `DebugMCPServer` implements it using the official `@modelcontextprotocol/sdk` with Streamable HTTP transport over an express HTTP server.
+AI coding agents need a standardized way to control debuggers programmatically.
+MCP provides this standard, and `DebugMCPServer` implements it using the official
+`@modelcontextprotocol/sdk` with Streamable HTTP and stdio transports.
 
 ## Responsibility
 
@@ -15,16 +19,17 @@ AI coding agents need a standardized way to control debuggers programmatically. 
 - Register documentation resources for agent guidance
 - Delegate all debugging operations to `DebuggingHandler`
 - Manage Streamable HTTP transport via `StreamableHTTPServerTransport` on configurable port (default: 3001)
+- Manage `StdioServerTransport` when launched by the standalone CLI
 
 ## Architecture Position
 
 ```
 AI Agent (MCP Client)
-        │
-        ▼ HTTP POST /mcp
+        │ HTTP or stdio
+        ▼
 ┌───────────────────┐
 │  DebugMCPServer   │  ◄── You are here
-│ (express + HTTP)  │
+│   (MCP transport) │
 └───────────────────┘
         │
         ▼ Delegates to
@@ -34,6 +39,14 @@ AI Agent (MCP Client)
 ```
 
 ## Key Concepts
+
+### Standalone CLI
+
+`src/cli/main.ts` starts this server without loading the VS Code module. It
+injects a `CliDebuggingExecutor` and `CliConfigurationManager` for each MCP
+session. The CLI can use stdio or the same loopback Streamable HTTP endpoint.
+Unlike the extension host, it requires an explicit adapter registration and
+does not use window routing.
 
 ### Multi-window routing (multiple VS Code windows / repos)
 

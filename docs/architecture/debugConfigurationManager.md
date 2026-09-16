@@ -4,6 +4,10 @@
 
 Produces the argument passed to `vscode.debug.startDebugging()` — either a launch.json configuration name or a minimal `DebugConfiguration` stub.
 
+The standalone counterpart, `src/cli/cliConfigurationManager.ts`, resolves an
+explicit adapter registration from project or user configuration and produces
+the DAP launch/attach arguments. It intentionally has no default adapters.
+
 ## Motivation
 
 Earlier versions of this class manually parsed `launch.json`, scored configurations, and assembled fully populated per-language config objects. That duplicated work VS Code and the language debug extensions already do better:
@@ -24,6 +28,14 @@ Delegating to those mechanisms keeps this class small and ensures defaults stay 
 **Test debugging is not handled here.** It is routed through `DebuggingExecutor.debugTestAtCursor`, which uses VS Code's built-in `testing.debugAtCursor` command to dispatch to whichever `TestController` owns the test under the cursor. That path supports any language whose extension registers a Test Explorer integration and correctly handles parent/child process attach (e.g. `dotnet test`'s testhost).
 
 ## Key Concepts
+
+### Standalone adapter selection
+
+The CLI merges user registrations with `.debugmcp.json`, with project entries
+overriding user entries of the same name. It selects the sole adapter claiming
+the source extension, or the adapter named by `configurationName`. Missing and
+ambiguous registrations fail with configuration commands instead of triggering
+environment discovery or installation.
 
 ### Return type
 

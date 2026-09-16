@@ -42,6 +42,7 @@ suite('Mixed indexed and named variable children', () => {
         });
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getActiveSession: () => ({ type: 'pwa-node' }),
             evaluateExpression: async () => ({ type: 'String', result: 'private preview', variablesReference: 1 }),
             getVariableChildren: async () => [

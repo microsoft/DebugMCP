@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Low-level wrapper around VS Code's Debug API and Debug Adapter Protocol (DAP). Executes actual debugging commands and retrieves debug state.
+Host abstraction for executing debugging commands and retrieving debug state.
+The VS Code implementation wraps the editor Debug API, while the standalone CLI
+implementation hosts a debug adapter directly over DAP stdio.
 
 ## Motivation
 
@@ -31,10 +33,22 @@ VS Code's debug API is powerful but requires careful handling. `DebuggingExecuto
         │
         ▼ Calls
 ┌───────────────────┐
-│  VS Code Debug API │
-│  (DAP Protocol)    │
+│ VS Code Debug API │
+│ or CLI DAP Client │
 └───────────────────┘
 ```
+
+### Standalone CLI host
+
+`src/cli/cliDebuggingExecutor.ts` implements the same executor interface without
+VS Code. It starts an explicitly registered adapter, performs the DAP
+initialize/launch/configuration sequence, handles adapter events and
+`runInTerminal`, and owns session, thread, frame, and breakpoint state.
+Step operations wait for a fresh stopped or terminated event. Continue allows a
+short stop-event grace period so immediately reached breakpoints are reported,
+while still returning promptly for long-running programs.
+`src/cli/adapterConfig.ts` loads project and user registrations. No adapter is
+registered, discovered, selected, installed, or upgraded implicitly.
 
 ## Key Concepts
 

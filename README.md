@@ -92,6 +92,51 @@ DebugMCP follows systematic debugging practices for effective issue resolution:
 
 ## Installation
 
+### Standalone CLI (preview)
+
+The standalone host talks directly to explicitly configured DAP adapters and
+does not require VS Code. It never discovers, downloads, installs, or selects an
+adapter automatically.
+
+```console
+npm install
+npm run package
+node dist/debugmcp.js adapter add python --command "python -m debugpy.adapter"
+node dist/debugmcp.js adapter validate python
+node dist/debugmcp.js configure
+```
+
+Adapter registrations are stored in `.debugmcp.json` by default. Add `--user`
+to `adapter add`, `adapter list`, or `adapter remove` to use the per-user
+configuration. Project registrations override registrations with the same name
+in user configuration.
+
+Language shorthands derive the DAP type and file extensions for `python`,
+`csharp`, and `cpp`. The command remains explicit so the selected environment
+determines which adapter installation is used. Compiled-language registrations
+can provide the executable in `--launch`; values support `${workspaceFolder}`,
+`${file}`, `${fileDirname}`, and `${fileBasenameNoExtension}`. Languages without
+a shorthand must provide `--type` and `--extensions` explicitly.
+
+The current CLI supports adapters that speak DAP over stdio. A registration can
+provide adapter-specific launch properties with `--launch` followed by a JSON
+object. If multiple registered adapters claim the same file extension,
+`start_debugging.configurationName` must identify the adapter to use. Test
+discovery remains host-specific; configure the adapter launch properties to run
+the required test command.
+
+`debugmcp configure` presents the same agent choices as the VS Code extension's
+setup popup and writes the standalone stdio command for every selected agent.
+In automation, repeat `--agent <id>` to bypass the terminal prompt, for example
+`debugmcp configure --agent copilot-cli --agent codex`. Each configuration has
+one canonical `debugmcp` entry, so configuring the CLI replaces an existing
+extension HTTP entry rather than registering both.
+
+Use `debugmcp status` to inspect the GitHub Copilot CLI registration. The
+DebugMCP command configures only the standalone CLI. To use the interactive
+VS Code version, configure it through the DebugMCP extension's agent popup;
+the command line does not select or configure the extension.
+
 ### Quick Install Options
 
 **Option 1: Direct Link** (Fastest)

@@ -126,6 +126,7 @@ suite('Cortex-Debug complex value inspection', () => {
     test('requested structs and arrays expose descendant names and types without values', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getVariables: async () => ({
                 scopes: [{
                     name: 'Locals',
@@ -170,6 +171,7 @@ suite('Cortex-Debug complex value inspection', () => {
     test('nested fields do not expose values when only their parent is requested', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getVariables: async () => ({
                 scopes: [{
                     name: 'Locals',
@@ -203,6 +205,7 @@ suite('Cortex-Debug complex value inspection', () => {
     test('evaluate_expression expands child names and types without reading their values', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             evaluateExpression: async () => ({
                 result: '{Customer}',
                 type: 'Customer',
@@ -247,6 +250,7 @@ suite('Cortex-Debug complex value inspection', () => {
     test('explicitly evaluated pointers return their value instead of being treated as aggregates', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             evaluateExpression: async () => ({
                 result: '0x94 "Alice"',
                 type: 'const char *',
@@ -269,6 +273,7 @@ suite('Cortex-Debug complex value inspection', () => {
         const expandedReferences: number[] = [];
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             evaluateExpression: async () => ({
                 result: '{Root}',
                 type: 'Root',
@@ -310,6 +315,7 @@ suite('Cortex-Debug complex value inspection', () => {
     test('successful empty adapter output is reported explicitly', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             evaluateExpression: async () => ({ resultClass: 'done', output: '' })
         } as unknown as IDebuggingExecutor;
 

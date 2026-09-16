@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { DebugConfiguration } from '../debugTypes';
 
 /**
  * Interface for configuration management operations
@@ -12,7 +13,7 @@ export interface IDebugConfigurationManager {
         workingDirectory: string,
         fileFullPath: string,
         configurationName?: string
-    ): Promise<string | vscode.DebugConfiguration>;
+    ): Promise<string | DebugConfiguration>;
     detectLanguageFromFilePath(fileFullPath: string): string;
 }
 
@@ -60,7 +61,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         workingDirectory: string,
         fileFullPath: string,
         configurationName?: string
-    ): Promise<string | vscode.DebugConfiguration> {
+    ): Promise<string | DebugConfiguration> {
         // Named launch.json config — let VS Code resolve it itself.
         if (configurationName &&
             configurationName.trim() !== '' &&
@@ -165,7 +166,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
      * Build a coreclr launch config pointing at the project's built DLL.
      * Throws a clear error if the project hasn't been built yet.
      */
-    private async createDotNetLaunchConfig(fileFullPath: string): Promise<vscode.DebugConfiguration> {
+    private async createDotNetLaunchConfig(fileFullPath: string): Promise<DebugConfiguration> {
         const csproj = await this.findNearestCsproj(fileFullPath);
         if (!csproj) {
             throw new Error(

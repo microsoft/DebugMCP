@@ -1,19 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 
-import * as vscode from 'vscode';
 import { z } from 'zod';
 import * as http from 'http';
 import { randomUUID } from 'node:crypto';
-import {
-    DebuggingExecutor,
-    ConfigurationManager,
-    DebuggingHandler,
-    IDebuggingHandler
-} from '.';
+import { IDebuggingHandler } from './debuggingHandler';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 /**
@@ -126,11 +121,11 @@ export class DebugMCPServer {
         if (handlerFactory) {
             this.handlerFactory = handlerFactory;
         } else {
-            // Default (single-window) behaviour: debug in this very window.
-            const executor = new DebuggingExecutor();
-            const configManager = new ConfigurationManager();
-            const handler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
-            this.handlerFactory = () => handler;
+            this.handlerFactory = () => new Proxy({}, {
+                get: () => async () => {
+                    throw new Error('No debugging host was configured for this DebugMCP server.');
+                }
+            }) as IDebuggingHandler;
         }
         this.port = port;
         this.hosts = Array.isArray(host) ? host : [host];
@@ -206,7 +201,7 @@ export class DebugMCPServer {
     private setupTools(server: McpServer, debuggingHandler: IDebuggingHandler) {
         // Start debugging tool
         server.registerTool('start_debugging', {
-            description: 'Start a VS Code debug session for a source file or for a single test method. ' +
+            description: 'Start a debug session for a source file or for a single test method. ' +
                 'Invoke the "debug-live" skill first.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the source code file to debug'),
@@ -217,7 +212,7 @@ export class DebugMCPServer {
                     'Leave empty to debug the entire file or test class.'
                 ),
                 configurationName: z.string().optional().describe(
-                    'Optional debug configuration name from launch.json. ' +
+                    'Optional debug configuration name. ' +
                     'If omitted, DebugMCP uses its default generated configuration.'
                 ),
             },
@@ -340,6 +335,12 @@ export class DebugMCPServer {
             },
         }, async (args: { waitForPauseSeconds?: number }) =>
             this.runTool('get_debug_status', () => debuggingHandler.handleGetDebugStatus(args)));
+    }
+
+    public async startStdio(): Promise<void> {
+        const server = this.createMcpServer();
+        await server.connect(new StdioServerTransport());
+        logger.info('DebugMCP CLI listening on stdio');
     }
 
     /**

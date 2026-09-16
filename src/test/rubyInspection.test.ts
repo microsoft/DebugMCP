@@ -23,6 +23,7 @@ suite('Ruby rdbg variable inspection', () => {
         let expanded = false;
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getActiveSession: () => ({ type: 'ruby_lsp' }),
             getVariables: async () => ({
                 scopes: [{
@@ -55,6 +56,7 @@ suite('Ruby rdbg variable inspection', () => {
         const expandedReferences: number[] = [];
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getActiveSession: () => ({ type: 'ruby_lsp' }),
             getVariables: async () => ({
                 scopes: [{
@@ -146,6 +148,7 @@ suite('Ruby rdbg variable inspection', () => {
         let expanded = false;
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getActiveSession: () => ({ type: 'ruby_lsp' }),
             evaluateExpression: async () => ({
                 result: '42',
@@ -171,6 +174,7 @@ suite('Ruby rdbg variable inspection', () => {
     test('still redacts Ruby String values that have metadata children', async () => {
         const executor = {
             hasActiveSession: async () => true,
+            getActiveFrameId: () => 1,
             getActiveSession: () => ({ type: 'ruby_lsp' }),
             getVariables: async () => ({
                 scopes: [{

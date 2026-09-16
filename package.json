@@ -68,6 +68,9 @@
     "onDebug"
   ],
   "main": "./dist/extension.js",
+  "bin": {
+    "debugmcp": "./dist/debugmcp.js"
+  },
   "contributes": {
     "commands": [
       {
@@ -119,6 +122,7 @@
     "compile": "tsc -p ./",
     "check-types": "tsc --noEmit -p ./",
     "bundle": "node esbuild.js",
+    "cli": "node dist/debugmcp.js",
     "package": "npm run check-types && node esbuild.js --production",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run bundle && npm run lint",

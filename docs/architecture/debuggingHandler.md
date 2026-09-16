@@ -2,7 +2,9 @@
 
 ## Purpose
 
-High-level orchestration layer that coordinates debugging operations between the MCP server and VS Code's debug API. Handles the asynchronous nature of debugging by implementing state change detection.
+Host-neutral orchestration layer that coordinates debugging operations between
+the MCP server and an injected executor. The executor may use VS Code's debug
+API or host a DAP adapter directly in the standalone CLI.
 
 ## Motivation
 
@@ -48,7 +50,10 @@ After executing a debug command (step over, continue, etc.), the handler:
 
 ### Exponential Backoff
 
-Polling starts at 1 second intervals and increases exponentially (capped at 10 seconds for session activation, 1 second for state changes). Jitter is added to prevent thundering herd issues.
+State-change polling uses short bounded intervals so either executor can expose
+new stopped/running state without the handler depending on host-specific event
+APIs. Session activation remains delegated to the executor, which can use its
+native VS Code or DAP events.
 
 ### Meaningful State Changes
 
