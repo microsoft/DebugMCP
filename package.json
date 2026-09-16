@@ -123,6 +123,8 @@
     "check-types": "tsc --noEmit -p ./",
     "bundle": "node esbuild.js",
     "cli": "node dist/debugmcp.js",
+    "cli:pack": "npm pack ./npm/cli",
+    "cli:publish": "npm publish ./npm/cli",
     "package": "npm run check-types && node esbuild.js --production",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run bundle && npm run lint",

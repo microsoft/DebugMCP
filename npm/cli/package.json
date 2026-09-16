@@ -1,0 +1,41 @@
+{
+  "name": "debugmcp",
+  "version": "0.1.0",
+  "description": "Standalone MCP debugger host for explicitly configured Debug Adapter Protocol adapters.",
+  "license": "MIT",
+  "author": "Microsoft Corporation",
+  "homepage": "https://github.com/microsoft/DebugMCP#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/microsoft/DebugMCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/microsoft/DebugMCP/issues"
+  },
+  "keywords": [
+    "debugger",
+    "debug-adapter-protocol",
+    "dap",
+    "mcp",
+    "model-context-protocol",
+    "copilot"
+  ],
+  "bin": {
+    "debugmcp": "dist/debugmcp.js"
+  },
+  "files": [
+    "dist/debugmcp.js",
+    "README.md",
+    "LICENSE.txt"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepack": "node scripts/prepare-package.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

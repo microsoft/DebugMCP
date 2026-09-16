@@ -98,6 +98,14 @@ The standalone host talks directly to explicitly configured DAP adapters and
 does not require VS Code. It never discovers, downloads, installs, or selects an
 adapter automatically.
 
+Install the published package:
+
+```console
+npm install --global debugmcp
+```
+
+For repository development, build and invoke the local bundle:
+
 ```console
 npm install
 npm run package

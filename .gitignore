@@ -422,3 +422,6 @@ node_modules/*
 out/*
 dist/*
 .vscode-test/*
+*.tgz
+npm/cli/LICENSE.txt
+npm/cli/dist/
