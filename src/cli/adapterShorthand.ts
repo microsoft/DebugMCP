@@ -16,9 +16,57 @@ const adapterLanguages: Record<string, AdapterLanguage> = {
 		type: 'coreclr',
 		extensions: ['.cs']
 	},
+	dotnet: {
+		type: 'coreclr',
+		extensions: ['.cs']
+	},
 	cpp: {
 		type: 'cppvsdbg',
 		extensions: ['.cpp', '.cc', '.cxx', '.c', '.h', '.hpp']
+	},
+	c: {
+		type: 'cppvsdbg',
+		extensions: ['.c', '.h']
+	},
+	javascript: {
+		type: 'pwa-node',
+		extensions: ['.js', '.mjs', '.cjs', '.jsx']
+	},
+	typescript: {
+		type: 'pwa-node',
+		extensions: ['.ts', '.mts', '.cts', '.tsx']
+	},
+	node: {
+		type: 'pwa-node',
+		extensions: ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx']
+	},
+	java: {
+		type: 'java',
+		extensions: ['.java']
+	},
+	go: {
+		type: 'go',
+		extensions: ['.go']
+	},
+	rust: {
+		type: 'lldb',
+		extensions: ['.rs']
+	},
+	ruby: {
+		type: 'rdbg',
+		extensions: ['.rb']
+	},
+	php: {
+		type: 'php',
+		extensions: ['.php']
+	},
+	swift: {
+		type: 'lldb',
+		extensions: ['.swift']
+	},
+	dart: {
+		type: 'dart',
+		extensions: ['.dart']
 	}
 };
 

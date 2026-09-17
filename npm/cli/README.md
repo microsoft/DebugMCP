@@ -2,7 +2,8 @@
 
 DebugMCP CLI lets MCP-capable coding agents control language debuggers without
 running VS Code. It communicates with explicitly configured Debug Adapter
-Protocol (DAP) adapters over stdio.
+Protocol (DAP) adapters over stdio, supporting any language for which such an
+adapter is available.
 
 ## Install
 

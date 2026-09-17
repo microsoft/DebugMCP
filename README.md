@@ -7,16 +7,18 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 [![Version](https://img.shields.io/badge/version-2.4.0-green.svg)](https://github.com/microsoft/DebugMCP)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
-> ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
-
-> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
 > 🚀 **DebugMCP CLI is now available on npm!** Debug directly from the
-> terminal without VS Code by connecting AI coding agents to explicitly
-> configured Debug Adapter Protocol (DAP) adapters. Install it with
+> terminal **without requiring VS Code or any IDE at all** by connecting AI
+> coding agents to explicitly configured Debug Adapter Protocol (DAP) adapters.
+> The debug adapter and target process **run in the background**. Install it with
 > `npm install --global debugmcp`, then run
 > `debugmcp configure --agent copilot-cli`. The CLI also installs the
 > `debug-live` skill automatically. **[View the package on npm](https://www.npmjs.com/package/debugmcp)**
+
+> ⭐ **If you find DebugMCP useful, please [star the repo on GitHub](https://github.com/microsoft/DebugMCP)!** It helps others discover the project and motivates continued development.
+
+> **📢 Developers Notice**: This extension is maintained by [ozzafar@microsoft.com](mailto:ozzafar@microsoft.com) and [orbarila@microsoft.com](mailto:orbarila@microsoft.com). We welcome feedback and contributions to help improve this extension.
 
 > 🎬 Watch DebugMCP in action — your AI assistant autonomously sets breakpoints, steps through code, and inspects variables directly in VS Code.
 
@@ -27,7 +29,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 ## ✨ What's New
 
 ### 2.4
-- **Standalone DebugMCP CLI** — install [`debugmcp`](https://www.npmjs.com/package/debugmcp) from npm and give MCP-compatible agents direct access to explicitly configured DAP adapters without running VS Code. The CLI supports Python, C#, C++, and custom adapter registrations, configures supported agents, and installs the `debug-live` skill automatically.
+- **Standalone DebugMCP CLI** — install [`debugmcp`](https://www.npmjs.com/package/debugmcp) from npm and give MCP-compatible agents direct access to explicitly configured DAP adapters without running VS Code. The CLI supports any language with a DAP adapter that communicates over stdio, configures supported agents, and installs the `debug-live` skill automatically.
 
 ### 2.2
 - **Cross-agent `debug-live` skill install** — the systematic debugging workflow ships as an [Agent Skill](https://agentskills.io) and is now installed into the **standard skills directories** — `~/.agents/skills/` (the cross-agent location honored by skills-compatible harnesses, including VS Code agent mode) and `~/.copilot/skills/` when present — so it's discoverable everywhere instead of being copied next to each agent's config where nothing scans it (fixes [#105](https://github.com/microsoft/DebugMCP/issues/105), where VS Code never loaded the skill). The server also advertises MCP `instructions` and the `start_debugging` tool points at the skill for the full workflow.
@@ -130,11 +132,14 @@ configuration. Project registrations override registrations with the same name
 in user configuration.
 
 Language shorthands derive the DAP type and file extensions for `python`,
-`csharp`, and `cpp`. The command remains explicit so the selected environment
-determines which adapter installation is used. Compiled-language registrations
-can provide the executable in `--launch`; values support `${workspaceFolder}`,
-`${file}`, `${fileDirname}`, and `${fileBasenameNoExtension}`. Languages without
-a shorthand must provide `--type` and `--extensions` explicitly.
+`csharp`, `dotnet`, `cpp`, `c`, `javascript`, `typescript`, `node`, `java`,
+`go`, `rust`, `ruby`, `php`, `swift`, and `dart`. These are configuration
+conveniences, not a language support boundary. The command remains explicit so
+the selected environment determines which adapter installation is used.
+Languages without a shorthand provide `--type` and `--extensions` explicitly.
+Compiled-language registrations can provide the executable in `--launch`;
+values support `${workspaceFolder}`, `${file}`, `${fileDirname}`, and
+`${fileBasenameNoExtension}`.
 
 The current CLI supports adapters that speak DAP over stdio. A registration can
 provide adapter-specific launch properties with `--launch` followed by a JSON
@@ -588,5 +593,3 @@ If DebugMCP has helped you debug faster, please consider giving it a star on Git
 ## License
 
 MIT License - See [LICENSE](LICENSE.txt) for details
-
-This extension was created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker**.

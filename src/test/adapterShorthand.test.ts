@@ -73,6 +73,32 @@ suite('CLI adapter shorthand', () => {
 		assert.strictEqual(createShorthandAdapter('cpp', ['OpenDebugAD7.exe']).type, 'cppvsdbg');
 	});
 
+	test('derives metadata for popular language ecosystems', () => {
+		const expected: Record<string, { type: string; extensions: string[] }> = {
+			dotnet: { type: 'coreclr', extensions: ['.cs'] },
+			c: { type: 'cppvsdbg', extensions: ['.c', '.h'] },
+			javascript: { type: 'pwa-node', extensions: ['.js', '.mjs', '.cjs', '.jsx'] },
+			typescript: { type: 'pwa-node', extensions: ['.ts', '.mts', '.cts', '.tsx'] },
+			node: {
+				type: 'pwa-node',
+				extensions: ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx']
+			},
+			java: { type: 'java', extensions: ['.java'] },
+			go: { type: 'go', extensions: ['.go'] },
+			rust: { type: 'lldb', extensions: ['.rs'] },
+			ruby: { type: 'rdbg', extensions: ['.rb'] },
+			php: { type: 'php', extensions: ['.php'] },
+			swift: { type: 'lldb', extensions: ['.swift'] },
+			dart: { type: 'dart', extensions: ['.dart'] }
+		};
+
+		for (const [language, metadata] of Object.entries(expected)) {
+			const adapter = createShorthandAdapter(language, ['adapter']);
+			assert.strictEqual(adapter.type, metadata.type, language);
+			assert.deepStrictEqual(adapter.extensions, metadata.extensions, language);
+		}
+	});
+
 	test('requires explicit metadata for an unknown language', () => {
 		assert.throws(
 			() => createShorthandAdapter('custom', ['custom-dap']),
