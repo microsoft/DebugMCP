@@ -6,6 +6,7 @@ import { DebugBreakpoint, DebugConfiguration, DebugSessionInfo } from './debugTy
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
 import { getDebugStartupContext, startDebuggingWithDiagnostics } from './utils/debugStartup';
+import { DebugSessionTracker } from './utils/debugSessionTracker';
 
 /**
  * Outcome of dispatching `testing.debugAtCursor`.
@@ -62,6 +63,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     // Cap each DAP request so an unresponsive adapter can't hang the caller.
     // Kept small relative to the router/tool backstops so it fails fast.
     private static readonly DAP_REQUEST_TIMEOUT_MS = 30_000;
+
+    constructor(private readonly sessionTracker?: DebugSessionTracker) {}
 
     /**
      * Issue a DAP request with an upper time bound, rejecting if the adapter
@@ -394,12 +397,15 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         
         try {
             const activeSession = vscode.debug.activeDebugSession;
-            if (activeSession) {
+            if (activeSession && !this.sessionTracker?.hasSessionEnded(activeSession)) {
                 state.sessionActive = true;
                 state.updateConfigurationName(activeSession.configuration.name ?? null);
                 
-                const activeStackItem = vscode.debug.activeStackItem;
-                if (activeStackItem && 'frameId' in activeStackItem) {
+                const selectedItem = vscode.debug.activeStackItem;
+                const activeStackItem = selectedItem?.session.id === activeSession.id ? selectedItem : undefined;
+                const revision = this.sessionTracker?.getRevision(activeSession.id);
+                state.paused = this.sessionTracker?.getPausedState(activeSession.id, activeStackItem?.threadId) ?? null;
+                if (state.paused !== false && activeStackItem && 'frameId' in activeStackItem) {
                     state.updateContext(activeStackItem.frameId, activeStackItem.threadId);
 
                     // Pull the current location from the debug adapter's top stack
@@ -415,9 +421,29 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                         await this.populateLocationFromFrame(state, topFrame.path, topFrame.line, numNextLines);
                     }
                 }
+
+                // Stack/source requests can finish after the target has resumed
+                // or exited. Do not return the now-invalid stopped context.
+                const currentSession = vscode.debug.activeDebugSession;
+                const selectedCurrentItem = vscode.debug.activeStackItem;
+                const currentItem = selectedCurrentItem?.session.id === currentSession?.id ? selectedCurrentItem : undefined;
+                const sessionActive = currentSession !== undefined && !this.sessionTracker?.hasSessionEnded(currentSession);
+                const paused = sessionActive && currentSession
+                    ? this.sessionTracker?.getPausedState(currentSession.id, currentItem?.threadId) ?? null
+                    : null;
+                if (!sessionActive || currentSession?.id !== activeSession.id || paused === false ||
+                    this.sessionTracker?.getRevision(activeSession.id) !== revision ||
+                    !currentItem || !('frameId' in currentItem) ||
+                    !activeStackItem || !('frameId' in activeStackItem) ||
+                    currentItem.frameId !== activeStackItem.frameId || currentItem.threadId !== activeStackItem.threadId) {
+                    state.reset();
+                    state.sessionActive = sessionActive;
+                    state.updateConfigurationName(sessionActive ? currentSession?.configuration.name ?? null : null);
+                }
+                state.paused = paused;
             }
         } catch (error) {
-            console.log('Unable to get debug state:', error);
+            logger.error('Unable to get debug state:', error);
         }
         
         // Populate breakpoints as compact "fileName:line" strings
@@ -786,6 +812,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     public getActiveFrameId(): number | undefined {
         const item = vscode.debug.activeStackItem;
+        const session = vscode.debug.activeDebugSession;
+        if (this.sessionTracker && (!session || this.sessionTracker.hasSessionEnded(session) ||
+            item?.session.id !== session.id ||
+            this.sessionTracker.getPausedState(session.id, item?.threadId) === false)) {
+            return undefined;
+        }
         return item && 'frameId' in item ? item.frameId : undefined;
     }
 
@@ -818,10 +850,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         // a DebugStackFrame (frameId present). A bare DebugThread means a thread
         // is selected but the adapter hasn't published a frame yet — calling
         // stackTrace/variables at that point can stall or return empty.
-        const isStoppedWithFrame = () => {
-            const item = vscode.debug.activeStackItem;
-            return !!item && 'frameId' in item;
-        };
+        const isStoppedWithFrame = () => this.getActiveFrameId() !== undefined;
 
         if (isStoppedWithFrame()) {
             return 'stopped';
@@ -888,7 +917,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                         // Only resolve when we have a stack frame. A bare
                         // DebugThread can fire while the program is still
                         // running, before the adapter publishes frame info.
-                        if (stackItem && 'frameId' in stackItem) {
+                        if (isStoppedWithFrame()) {
                             settle('stopped');
                         }
                     })
