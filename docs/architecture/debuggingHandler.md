@@ -63,6 +63,22 @@ A state change is considered meaningful when any of these change:
 - Current line number
 - Frame name (function/method)
 - Frame ID
+- Thread ID
+
+### Paused State and Pause Requests
+
+Paused status uses the executor's observed stopped/running state, independently
+of source and stack availability. If execution state has not been observed (for
+example, a session that predates tracking), an active frame/thread context is the
+fallback. A bare selected thread alone is not proof of a stop.
+Native/disassembly frames, unavailable local files, and empty stacks can all
+occur while stopped. Status waits and navigation use this same distinction;
+losing source information alone is not a resume.
+
+`handlePause()` is idempotent for an already-paused session: it returns the current
+state without issuing another pause or waiting for a location change. For a
+running session, it dispatches pause and waits for a stopped state or session
+termination, bounded by the operation timeout.
 
 ### Root Cause Analysis
 

@@ -9,6 +9,7 @@ import { ControlServer } from './controlServer';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import { WorkspaceRegistry } from './utils/workspaceRegistry';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
+import { DebugSessionTracker } from './utils/debugSessionTracker';
 import { logger, LogLevel } from './utils/logger';
 
 let mcpServer: DebugMCPServer | null = null;
@@ -30,6 +31,9 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info('DebugMCP extension is now active!');
     logger.logSystemInfo(`VS Code ${vscode.version}`);
     logger.logEnvironment();
+
+    const debugSessionTracker = new DebugSessionTracker();
+    context.subscriptions.push(debugSessionTracker);
 
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);
@@ -68,7 +72,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // advertises its workspace folders. The window that wins the public port
         // becomes the router and proxies each session to the control server of
         // the window owning the requested workspace.
-        const executor = new DebuggingExecutor();
+        const executor = new DebuggingExecutor(debugSessionTracker);
         const configManager = new ConfigurationManager();
         const localHandler = new DebuggingHandler(executor, configManager, timeoutInSeconds);
         const controlToken = randomUUID();

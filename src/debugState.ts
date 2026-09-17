@@ -15,6 +15,7 @@ export interface StackFrame {
  */
 export class DebugState {
     public sessionActive: boolean;
+    public paused: boolean | null;
     public fileFullPath: string | null;
     public fileName: string | null;
     public currentLine: number | null;
@@ -29,6 +30,7 @@ export class DebugState {
     
     constructor() {
         this.sessionActive = false;
+        this.paused = null;
         this.fileFullPath = null;
         this.fileName = null;
         this.currentLine = null;
@@ -47,6 +49,7 @@ export class DebugState {
      */
     public reset(): void {
         this.sessionActive = false;
+        this.paused = null;
         this.fileFullPath = null;
         this.fileName = null;
         this.currentLine = null;
@@ -67,6 +70,13 @@ export class DebugState {
         return this.sessionActive && 
                this.frameId !== null && 
                this.threadId !== null;
+    }
+
+    /**
+     * Prefer observed execution state; frames are a fallback for unobserved sessions.
+     */
+    public isPaused(): boolean {
+        return this.sessionActive && (this.paused ?? this.hasValidContext());
     }
 
     /**
@@ -140,6 +150,7 @@ export class DebugState {
     public clone(): DebugState {
         const cloned = new DebugState();
         cloned.sessionActive = this.sessionActive;
+        cloned.paused = this.paused;
         cloned.fileFullPath = this.fileFullPath;
         cloned.fileName = this.fileName;
         cloned.currentLine = this.currentLine;
@@ -160,6 +171,7 @@ export class DebugState {
     public toString(): string {
         const stateObject: {
             sessionActive: boolean;
+            paused: boolean;
             configurationName?: string | null;
             stackTrace?: string[];
             breakpoints?: string[];
@@ -173,6 +185,7 @@ export class DebugState {
             frameName?: string | null;
         } = {
             sessionActive: this.sessionActive,
+            paused: this.isPaused(),
         };
 
         if (this.sessionActive) {
