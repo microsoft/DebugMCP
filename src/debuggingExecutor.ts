@@ -1,3 +1,9 @@
+import * as fs from 'node:fs';
+import { isSourceUri } from './utils/sourceUri';
+
+function toSourceUri(source: string): vscode.Uri {
+    return isSourceUri(source) ? vscode.Uri.parse(source, true) : vscode.Uri.file(source);
+}
 // Copyright (c) Microsoft Corporation.
 
 import * as vscode from 'vscode';
@@ -51,6 +57,7 @@ export interface IDebuggingExecutor {
     getActiveSession(): DebugSessionInfo | undefined;
     getActiveFrameId?(): number | undefined;
     waitForDebugSessionReady(timeoutMs: number, signal?: AbortSignal): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
+    getFileLineCount?(fileFullPath: string): Promise<number>;
     dispose?(): Promise<void> | void;
 }
 
@@ -85,6 +92,16 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     /**
      * Start a debugging session
      */
+    public async getFileLineCount(fileFullPath: string): Promise<number> {
+        if (isSourceUri(fileFullPath)) {
+            const uri = toSourceUri(fileFullPath);
+            const document = await vscode.workspace.openTextDocument(uri);
+            return document.lineCount;
+        }
+        const content = await fs.promises.readFile(fileFullPath, 'utf8');
+        return content.length === 0 ? 0 : content.split(/\r?\n/).length;
+    }
+
     public async startDebugging(
         workingDirectory: string, 
         config: string | DebugConfiguration
@@ -350,7 +367,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public async addBreakpoint(fileFullPath: string, line: number, condition?: string, logMessage?: string): Promise<void> {
         try {
-            const uri = vscode.Uri.file(fileFullPath);
+            const uri = toSourceUri(fileFullPath);
             const breakpoint = new vscode.SourceBreakpoint(
                 new vscode.Location(uri, new vscode.Position(line - 1, 0)),
                 true,
@@ -369,7 +386,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      */
     public async removeBreakpoint(fileFullPath: string, line: number): Promise<void> {
         try {
-            const uri = vscode.Uri.file(fileFullPath);
+            const uri = toSourceUri(fileFullPath);
             const breakpoints = vscode.debug.breakpoints.filter(bp => {
                 if (bp instanceof vscode.SourceBreakpoint) {
                     return bp.location.uri.toString() === uri.toString() && 
@@ -746,7 +763,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             .filter((breakpoint): breakpoint is vscode.SourceBreakpoint =>
                 breakpoint instanceof vscode.SourceBreakpoint)
             .map(breakpoint => ({
-                fileFullPath: breakpoint.location.uri.fsPath,
+                fileFullPath: isSourceUri(breakpoint.location.uri.toString())
+                    ? breakpoint.location.uri.toString()
+                    : breakpoint.location.uri.fsPath,
                 line: breakpoint.location.range.start.line + 1,
                 condition: breakpoint.condition,
                 logMessage: breakpoint.logMessage

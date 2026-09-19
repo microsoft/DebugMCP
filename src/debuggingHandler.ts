@@ -5,6 +5,7 @@ import { DebugConfigurationManager, IDebugConfigurationManager } from './utils/d
 import { DebugState } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { logger } from './utils/logger';
+import { isSourceUri } from './utils/sourceUri';
 import {
     isSensitiveExpression,
     isSensitiveName,
@@ -26,9 +27,9 @@ export interface IDebuggingHandler {
     handleContinue(): Promise<string>;
     handlePause(): Promise<string>;
     handleRestart(): Promise<string>;
-    handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string>;
-    handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string>;
-    handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string>;
+    handleAddBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; condition?: string }): Promise<string>;
+    handleAddLogpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; logMessage: string; condition?: string }): Promise<string>;
+    handleRemoveBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number }): Promise<string>;
     handleClearAllBreakpoints(): Promise<string>;
     handleListBreakpoints(): Promise<string>;
     handleGetVariables(args: { variableNames: string[]; scope?: 'local' | 'global' | 'all' }): Promise<string>;
@@ -394,7 +395,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * Add a breakpoint at specified location. An optional condition makes it a
      * conditional breakpoint that only pauses when the expression is true.
      */
-    public async handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string> {
+    public async handleAddBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; condition?: string }): Promise<string> {
         const { fileFullPath, line, condition } = args;
 
         try {
@@ -446,7 +447,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * interpolated by the debug adapter) instead of pausing execution. An
      * optional condition only logs when the expression is true.
      */
-    public async handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string> {
+    public async handleAddLogpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; logMessage: string; condition?: string }): Promise<string> {
         const { fileFullPath, line, logMessage, condition } = args;
 
         try {
@@ -476,10 +477,11 @@ export class DebuggingHandler implements IDebuggingHandler {
     /**
      * Remove a breakpoint from specified location
      */
-    public async handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string> {
+    public async handleRemoveBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number }): Promise<string> {
         const { fileFullPath, line } = args;
         
         try {
+
             // Check if breakpoint exists at this location
             const breakpoints = this.executor.getBreakpoints();
             const existingBreakpoint = breakpoints.find(bp =>
@@ -1018,6 +1020,9 @@ export class DebuggingHandler implements IDebuggingHandler {
     }
 
     private async getFileLineCount(fileFullPath: string): Promise<number> {
+        if (this.executor.getFileLineCount) {
+            return await this.executor.getFileLineCount(fileFullPath);
+        }
         const content = await fs.promises.readFile(fileFullPath, 'utf8');
         return content.length === 0 ? 0 : content.split(/\r?\n/).length;
     }

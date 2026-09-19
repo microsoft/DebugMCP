@@ -7,7 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [Unreleased]
 
 ### Added
-- **Claude Code auto-registration** - Claude Code is now offered in the agent selection popup and configured via `~/.claude.json`'s user-scope `mcpServers` field. Claude Desktop connects via its Custom Connector UI instead of a static config file; the README's manual configuration section covers both.
+- Breakpoint, logpoint, and removal tools now support VS Code virtual-document URIs, including Business Central   sources. An optional  selects the correct workspace when multiple editor windows are open.
+- **Claude Code auto-registration** - Claude Code is now offered in the agent selection popup and configured via 's user-scope  field. Claude Desktop connects via its Custom Connector UI instead of a static config file; the README's manual configuration section covers both.
 
 ## [2.3.5] - 2026-09-09
 
