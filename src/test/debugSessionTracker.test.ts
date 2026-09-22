@@ -73,6 +73,52 @@ suite('DAP execution tracking (#157)', () => {
 	test('unobserved and pre-existing sessions remain unknown', () => {
 		assert.equal(fixture.tracker.getPausedState(session.id), undefined);
 		assert.equal(fixture.tracker.getPausedState('pre-existing', 0), undefined);
+		assert.equal(fixture.tracker.getStopSequence(session.id), undefined);
+		assert.equal(fixture.tracker.getStopSequence('pre-existing', 0), undefined);
+	});
+
+	for (const continued of [false, true]) {
+		test(`fresh stops advance the selected-thread marker (continued=${continued})`, () => {
+			send(adapter, 'stopped', { reason: 'breakpoint', threadId: 0 });
+			const first = fixture.tracker.getStopSequence(session.id, 0);
+			assert.notEqual(first, undefined);
+			assert.equal(fixture.tracker.getStopSequence(session.id, 0), first);
+			if (continued) {
+				send(adapter, 'continued', { threadId: 0 });
+				assert.equal(fixture.tracker.getStopSequence(session.id, 0), undefined);
+			}
+			send(adapter, 'stopped', { reason: 'step', threadId: 0 });
+			const second = fixture.tracker.getStopSequence(session.id, 0);
+			assert.notEqual(second, undefined);
+			assert.notEqual(second, first);
+			assert.equal(fixture.tracker.getStopSequence(session.id), second);
+		});
+	}
+
+	test('other threads cannot advance the selected stopped thread marker', () => {
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 0 });
+		const first = fixture.tracker.getStopSequence(session.id, 0);
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 1 });
+		assert.equal(fixture.tracker.getStopSequence(session.id, 0), first);
+		assert.notEqual(fixture.tracker.getStopSequence(session.id, 1), first);
+		send(adapter, 'continued', { threadId: 1, allThreadsContinued: false });
+		assert.equal(fixture.tracker.getStopSequence(session.id, 0), first);
+		assert.equal(fixture.tracker.getStopSequence(session.id, 1), undefined);
+	});
+
+	test('all-thread and unscoped stops advance markers without needing a frame', () => {
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 0 });
+		send(adapter, 'stopped', { reason: 'pause', allThreadsStopped: true });
+		const all = fixture.tracker.getStopSequence(session.id);
+		assert.notEqual(all, undefined);
+		assert.equal(fixture.tracker.getStopSequence(session.id, 0), all);
+		assert.equal(fixture.tracker.getStopSequence(session.id, 1), all);
+		send(adapter, 'stopped', { reason: 'step', threadId: 0 });
+		const selected = fixture.tracker.getStopSequence(session.id, 0);
+		send(adapter, 'stopped', { reason: 'step' });
+		const unscoped = fixture.tracker.getStopSequence(session.id);
+		assert.notEqual(unscoped, selected);
+		assert.equal(fixture.tracker.getStopSequence(session.id, 0), unscoped);
 	});
 
 	test('a stopped thread with ID zero is recorded without requesting frames', () => {
@@ -149,18 +195,22 @@ suite('DAP execution tracking (#157)', () => {
 			send(adapter, 'stopped', { reason: 'pause', threadId: 0 });
 			assert.equal(fixture.tracker.getPausedState(session.id), undefined);
 			assert.equal(fixture.tracker.getRevision(session.id), undefined);
+			assert.equal(fixture.tracker.getStopSequence(session.id), undefined);
 			assert.equal(fixture.tracker.hasSessionEnded(session), true);
 		});
 	}
 
 	test('fresh adapter registration does not inherit stopped state or old callbacks', async () => {
 		send(adapter, 'stopped', { reason: 'pause', threadId: 0 });
+		const previous = fixture.tracker.getStopSequence(session.id);
 		const replacement = await fixture.attach(session);
 		adapter.onWillStopSession?.();
 		send(adapter, 'continued', { threadId: 0 });
 		assert.equal(fixture.tracker.getPausedState(session.id), undefined);
+		assert.equal(fixture.tracker.getStopSequence(session.id), undefined);
 		send(replacement, 'stopped', { reason: 'pause', threadId: 0 });
 		assert.equal(fixture.tracker.getPausedState(session.id), true);
+		assert.notEqual(fixture.tracker.getStopSequence(session.id), previous);
 	});
 
 	test('ignores malformed messages and custom events', () => {
@@ -177,6 +227,7 @@ suite('DAP execution tracking (#157)', () => {
 			adapter.onDidSendMessage?.(message);
 		}
 		assert.equal(fixture.tracker.getPausedState(session.id), undefined);
+		assert.equal(fixture.tracker.getStopSequence(session.id), undefined);
 	});
 
 	test('disposal unregisters listeners and clears all execution records', () => {
@@ -239,6 +290,7 @@ suite('VS Code observed execution snapshots (#157)', () => {
 		assert.equal(state.isPaused(), true);
 		assert.equal(state.frameId, null);
 		assert.equal(state.threadId, null);
+		assert.equal(state.stopSequence, fixture.tracker.getStopSequence(session.id));
 		assert.equal(requests, 0);
 	});
 
@@ -291,6 +343,7 @@ suite('VS Code observed execution snapshots (#157)', () => {
 	test('a resume and new stop discard old frame data even when IDs are reused', async () => {
 		item = { session, threadId: 0, frameId: 0 };
 		send(adapter, 'stopped', { reason: 'pause', threadId: 0 });
+		const previous = (await executor.getCurrentDebugState()).stopSequence;
 		duringStack = () => {
 			send(adapter, 'continued', { threadId: 0 });
 			send(adapter, 'stopped', { reason: 'pause', threadId: 0 });
@@ -298,6 +351,27 @@ suite('VS Code observed execution snapshots (#157)', () => {
 		const state = await executor.getCurrentDebugState();
 		assert.equal(state.isPaused(), true);
 		assert.equal(state.frameId, null);
+		assert.equal(state.stopSequence, fixture.tracker.getStopSequence(session.id, 0));
+		assert.notEqual(state.stopSequence, previous);
+	});
+
+	test('successive source-less snapshots distinguish reused frame IDs by their stops', async () => {
+		item = { session, threadId: 0, frameId: 0 };
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 0 });
+		const before = await executor.getCurrentDebugState();
+		send(adapter, 'stopped', { reason: 'step', threadId: 0 });
+		const after = await executor.getCurrentDebugState();
+		assert.equal(after.toString(), before.toString());
+		assert.notEqual(after.stopSequence, before.stopSequence);
+	});
+
+	test('an unrelated thread stop cannot change the focused snapshot stop marker', async () => {
+		item = { session, threadId: 0, frameId: 0 };
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 0 });
+		const before = await executor.getCurrentDebugState();
+		send(adapter, 'stopped', { reason: 'breakpoint', threadId: 1 });
+		const after = await executor.getCurrentDebugState();
+		assert.equal(after.stopSequence, before.stopSequence);
 	});
 
 	test('termination during lookup suppresses a lagging active UI session', async () => {

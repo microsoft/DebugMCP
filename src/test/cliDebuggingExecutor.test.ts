@@ -6,6 +6,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CliDebuggingExecutor } from '../cli/cliDebuggingExecutor';
 import { CliDebugConfiguration } from '../cli/cliConfigurationManager';
+import { DebuggingHandler } from '../debuggingHandler';
+import { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 
 suite('CLI debugging executor', () => {
 	let directory: string;
@@ -60,6 +62,10 @@ function handle(request) {
 			respond(request);
 			send({ type: 'event', event: 'continued', body: { threadId: 7 } });
 			currentLine = 3;
+			send({ type: 'event', event: 'stopped', body: { reason: 'step', threadId: 7 } });
+			break;
+		case 'stepIn':
+			respond(request);
 			send({ type: 'event', event: 'stopped', body: { reason: 'step', threadId: 7 } });
 			break;
 		case 'continue':
@@ -123,6 +129,15 @@ process.stdin.on('data', chunk => {
 		const steppedState = await executor.getCurrentDebugState();
 		assert.strictEqual(steppedState.currentLine, 3);
 		assert.strictEqual(executor.getActiveFrameId(), 11);
+		assert.notStrictEqual(steppedState.stopSequence, state.stopSequence);
+
+		const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 3);
+		for (const operation of ['handleStepOver', 'handleStepInto'] as const) {
+			const started = Date.now();
+			const repeatedStep = await handler[operation]();
+			assert.strictEqual(repeatedStep, steppedState.toString());
+			assert.ok(Date.now() - started < 2_000, 'unchanged CLI frames must not cause a second wait');
+		}
 		await executor.continue();
 		const continuedState = await executor.getCurrentDebugState();
 		assert.strictEqual(continuedState.currentLine, 4);

@@ -28,6 +28,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 	private capabilities: Record<string, unknown> = {};
 	private initialized = false;
 	private stateRevision = 0;
+	private stopSequence = 0;
 
 	public async startDebugging(
 		workingDirectory: string,
@@ -260,6 +261,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 		const result = new DebugState();
 		result.sessionActive = this.state !== 'none' && this.state !== 'terminated';
 		result.paused = this.state === 'stopped';
+		result.stopSequence = result.paused && this.stopSequence > 0 ? this.stopSequence : null;
 		result.updateConfigurationName(this.session?.name ?? null);
 		result.updateBreakpoints(this.breakpoints.map(item => {
 			const suffix = item.condition ? ` [when: ${item.condition}]` : '';
@@ -369,6 +371,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 
 	private registerClientEvents(client: DapClient): void {
 		client.on('stopped', body => {
+			this.stopSequence++;
 			this.threadId = typeof body.threadId === 'number' ? body.threadId : this.threadId;
 			this.frameId = undefined;
 			this.state = 'stopped';

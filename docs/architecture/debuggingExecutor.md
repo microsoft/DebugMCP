@@ -143,6 +143,13 @@ status. Activation creates one tracker and owns its disposal; test-created
 executors can omit it. Session termination and adapter shutdown clear tracked
 execution state without retaining terminated session objects.
 
+Snapshots also carry an internal stopped-event sequence. Unlike the revision used
+to reject stale asynchronous reads, it advances only on a stop, so an unchanged
+source location or an empty stack cannot hide a completed step. Selected-thread
+markers are unaffected by other threads' partial transitions; all-thread and
+unscoped stops remain observable without a selected frame. The CLI supplies the
+same marker from its stopped events. These markers are not added to tool output.
+
 After asynchronous stack/source lookups, execution transitions, a changed or
 cleared frame, or an ended session invalidate the old frame snapshot. The latest
 observed stopped/running state is retained even when frame information is

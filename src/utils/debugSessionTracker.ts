@@ -8,6 +8,9 @@ interface ISessionExecutionState {
 	threads: Map<number, boolean>;
 	unscopedStop: boolean;
 	revision: number;
+	stopSequence?: number;
+	defaultStopSequence?: number;
+	threadStopSequences: Map<number, number>;
 }
 
 type DebugTrackerApi = Pick<typeof vscode.debug,
@@ -37,6 +40,7 @@ export class DebugSessionTracker implements vscode.Disposable {
 					}
 					const state: ISessionExecutionState = {
 						threads: new Map(),
+						threadStopSequences: new Map(),
 						unscopedStop: false,
 						revision: ++this.revision
 					};
@@ -80,6 +84,22 @@ export class DebugSessionTracker implements vscode.Disposable {
 	/** Detect an execution transition during an asynchronous snapshot lookup. */
 	public getRevision(sessionId: string): number | undefined {
 		return this.sessions.get(sessionId)?.revision;
+	}
+
+	/** Only a stopped event advances this marker, not a resume or a UI refresh. */
+	public getStopSequence(sessionId: string, threadId?: number): number | undefined {
+		const state = this.sessions.get(sessionId);
+		if (!state || this.getPausedState(sessionId, threadId) !== true) {
+			return undefined;
+		}
+		if (threadId === undefined) {
+			return state.stopSequence;
+		}
+		const sequence = Math.max(
+			state.threadStopSequences.get(threadId) ?? 0,
+			state.defaultStopSequence ?? 0
+		);
+		return sequence === 0 ? undefined : sequence;
 	}
 
 	public hasSessionEnded(session: vscode.DebugSession): boolean {
@@ -127,20 +147,27 @@ export class DebugSessionTracker implements vscode.Disposable {
 		}
 		state.revision = ++this.revision;
 		if (message.event === 'stopped') {
+			state.stopSequence = state.revision;
 			if (body.allThreadsStopped === true) {
 				state.defaultPaused = true;
 				state.threads.clear();
 				state.unscopedStop = false;
+				state.defaultStopSequence = state.stopSequence;
+				state.threadStopSequences.clear();
 			} else if (threadId !== undefined) {
 				state.threads.set(threadId, true);
+				state.threadStopSequences.set(threadId, state.stopSequence);
 			} else {
 				state.unscopedStop = true;
+				state.defaultStopSequence = state.stopSequence;
 			}
 		} else if (body.allThreadsContinued !== false) {
 			// DAP defaults an omitted allThreadsContinued to all threads running.
 			state.defaultPaused = false;
 			state.threads.clear();
 			state.unscopedStop = false;
+			state.defaultStopSequence = undefined;
+			state.threadStopSequences.clear();
 		} else if (threadId !== undefined) {
 			state.threads.set(threadId, false);
 		}

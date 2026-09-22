@@ -7,8 +7,10 @@ suite('CLI explicit execution snapshots (#157)', () => {
 	test('reports a stopped session with no selected thread as paused', async () => {
 		const executor = new CliDebuggingExecutor();
 		executor['state'] = 'stopped';
+		executor['stopSequence'] = 1;
 		const state = await executor.getCurrentDebugState();
 		assert.equal(state.isPaused(), true);
+		assert.equal(state.stopSequence, 1);
 		assert.equal(state.frameId, null);
 		assert.equal(state.threadId, null);
 	});
@@ -16,6 +18,7 @@ suite('CLI explicit execution snapshots (#157)', () => {
 	test('an empty stack preserves paused status and clears a previously cached frame', async () => {
 		const executor = new CliDebuggingExecutor();
 		executor['state'] = 'stopped';
+		executor['stopSequence'] = 2;
 		executor['threadId'] = 0;
 		executor['frameId'] = 9;
 		Object.defineProperty(executor, 'client', {
@@ -29,6 +32,7 @@ suite('CLI explicit execution snapshots (#157)', () => {
 		});
 		const state = await executor.getCurrentDebugState();
 		assert.equal(state.paused, true);
+		assert.equal(state.stopSequence, 2);
 		assert.equal(state.frameId, null);
 		assert.equal(executor.getActiveFrameId(), undefined);
 	});
@@ -36,10 +40,12 @@ suite('CLI explicit execution snapshots (#157)', () => {
 	test('running state never supplies a stale stopped frame', async () => {
 		const executor = new CliDebuggingExecutor();
 		executor['state'] = 'running';
+		executor['stopSequence'] = 1;
 		executor['frameId'] = 0;
 		const state = await executor.getCurrentDebugState();
 		assert.equal(state.sessionActive, true);
 		assert.equal(state.paused, false);
+		assert.equal(state.stopSequence, null);
 		assert.equal(state.frameId, null);
 		assert.equal(executor.getActiveFrameId(), undefined);
 	});
@@ -48,6 +54,7 @@ suite('CLI explicit execution snapshots (#157)', () => {
 		test(`${transition} during stack lookup discards stale response frames`, async () => {
 			const executor = new CliDebuggingExecutor();
 			executor['state'] = 'stopped';
+			executor['stopSequence'] = 1;
 			executor['threadId'] = 0;
 			Object.defineProperty(executor, 'client', {
 				value: {
@@ -56,6 +63,7 @@ suite('CLI explicit execution snapshots (#157)', () => {
 						executor['emitState']();
 						if (transition === 'restopped') {
 							executor['state'] = 'stopped';
+							executor['stopSequence']++;
 							executor['emitState']();
 						}
 						return { stackFrames: [{ id: 0, name: 'main' }] };
@@ -66,6 +74,7 @@ suite('CLI explicit execution snapshots (#157)', () => {
 			assert.equal(state.sessionActive, transition !== 'terminated');
 			assert.equal(state.paused, transition === 'restopped');
 			assert.equal(state.frameId, null);
+			assert.equal(state.stopSequence, transition === 'restopped' ? 2 : null);
 			assert.equal(executor.getActiveFrameId(), undefined);
 		});
 	}

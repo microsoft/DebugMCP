@@ -21,6 +21,7 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 |----------|------|-------------|
 | `sessionActive` | `boolean` | Whether a debug session exists, running or stopped |
 | `paused` | `boolean \| null` | Observed execution state, or `null` when unobserved |
+| `stopSequence` | `number \| null` | Internal executor-local stopped-event marker, independent of frames and source |
 | `fileFullPath` | `string \| null` | Full path to current file |
 | `fileName` | `string \| null` | Just the filename |
 | `currentLine` | `number \| null` | 1-based line number |
@@ -54,7 +55,7 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 1. Capture before state: beforeState = executor.getCurrentDebugState()
 2. Execute debug command
 3. Poll for changes: compare beforeState with currentState
-4. State changed when: file, line, frame, or session status differs
+4. Step completed when a fresh stop is observed or the session ends; unobserved sessions fall back to location/context comparison
 ```
 
 ## Design Notes
@@ -70,3 +71,6 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 - **Snapshot lifecycle**: Cloning preserves observed execution state; resetting
   returns it to unknown. JSON output includes the computed `isPaused()` boolean,
   so an inactive session is never serialized as paused.
+- **Stop identity**: A new stopped event advances `stopSequence` even if the
+  adapter reuses the frame ID and location or returns no frames. This internal
+  comparison marker is cloned/reset with the snapshot but omitted from tool JSON.

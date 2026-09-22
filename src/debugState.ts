@@ -16,6 +16,7 @@ export interface StackFrame {
 export class DebugState {
     public sessionActive: boolean;
     public paused: boolean | null;
+    public stopSequence: number | null;
     public fileFullPath: string | null;
     public fileName: string | null;
     public currentLine: number | null;
@@ -31,6 +32,7 @@ export class DebugState {
     constructor() {
         this.sessionActive = false;
         this.paused = null;
+        this.stopSequence = null;
         this.fileFullPath = null;
         this.fileName = null;
         this.currentLine = null;
@@ -50,6 +52,7 @@ export class DebugState {
     public reset(): void {
         this.sessionActive = false;
         this.paused = null;
+        this.stopSequence = null;
         this.fileFullPath = null;
         this.fileName = null;
         this.currentLine = null;
@@ -151,6 +154,7 @@ export class DebugState {
         const cloned = new DebugState();
         cloned.sessionActive = this.sessionActive;
         cloned.paused = this.paused;
+        cloned.stopSequence = this.stopSequence;
         cloned.fileFullPath = this.fileFullPath;
         cloned.fileName = this.fileName;
         cloned.currentLine = this.currentLine;

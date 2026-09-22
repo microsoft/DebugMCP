@@ -1001,7 +1001,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * `settleOnResume` (continue only) additionally treats "running again, no
      * stack frame" as a terminal state. `hasStateChanged` deliberately reports
      * paused -> running as "no change" so that a step isn't settled by the
-     * transient frameless moment mid-step; for a continue, though, that state
+     * transient running moment mid-step; for a continue, though, that state
      * is the successful outcome, and a process that keeps running (a server, an
      * event loop) never produces the next frame the step path waits for.
      */
@@ -1047,7 +1047,14 @@ export class DebuggingHandler implements IDebuggingHandler {
         if (!afterState.sessionActive) {
             return true;
         }
-        
+
+        // A completed step can reuse every frame/location field, or have no stack.
+        // Once stops are observed, UI-only changes must not settle a pending step.
+        if (beforeState.stopSequence !== null || afterState.stopSequence !== null) {
+            return afterState.isPaused() && afterState.stopSequence !== null &&
+                beforeState.stopSequence !== afterState.stopSequence;
+        }
+
         if (beforeState.isPaused() !== afterState.isPaused() ||
             beforeState.hasValidContext() !== afterState.hasValidContext()) {
             return true;

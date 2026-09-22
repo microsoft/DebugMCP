@@ -441,6 +441,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     state.updateConfigurationName(sessionActive ? currentSession?.configuration.name ?? null : null);
                 }
                 state.paused = paused;
+                state.stopSequence = sessionActive && currentSession
+                    ? this.sessionTracker?.getStopSequence(currentSession.id, currentItem?.threadId) ?? null
+                    : null;
             }
         } catch (error) {
             logger.error('Unable to get debug state:', error);

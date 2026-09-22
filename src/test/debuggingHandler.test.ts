@@ -7,6 +7,7 @@ import * as path from 'path';
 import { DebugState } from '../debugState';
 import { DebuggingHandler } from '../debuggingHandler';
 import { IDebuggingExecutor } from '../debuggingExecutor';
+import { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 
 /**
  * Test suite for DebuggingHandler state change detection
@@ -219,6 +220,106 @@ suite('DebuggingHandler waitForStateChange (event-driven)', () => {
         await handler.dispose();
 
         assert.strictEqual(disposeCalls, 1);
+    });
+
+    for (const operation of ['handleStepOver', 'handleStepInto', 'handleStepOut'] as const) {
+        for (const context of ['source', 'source-less', 'empty']) {
+            test(`${operation} completes on a fresh stop with unchanged ${context} context`, async () => {
+                const before = context === 'source' ? lineState(10) : new DebugState();
+                before.sessionActive = true;
+                before.paused = true;
+                before.stopSequence = 1;
+                if (context === 'source-less') {
+                    before.updateContext(0, 0);
+                }
+                const after = before.clone();
+                after.stopSequence = 2;
+                let reads = 0;
+                const executor = makeExecutor(call => {
+                    reads++;
+                    return call === 0 ? before : after;
+                });
+                const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.3);
+                const result = await handler[operation]();
+                assert.equal(result, after.toString());
+                assert.equal(reads, 2, 'a fresh stop must not wait for a different frame or timeout');
+            });
+        }
+    }
+
+    test('waits through running state and UI-only changes until the next observed stop', async () => {
+        const before = lineState(10);
+        before.paused = true;
+        before.stopSequence = 1;
+        const changedLocation = before.clone();
+        changedLocation.currentLine = 11;
+        const clearedContext = before.clone();
+        clearedContext.frameId = null;
+        const running = before.clone();
+        running.paused = false;
+        const after = before.clone();
+        after.stopSequence = 2;
+        const states = [before, changedLocation, clearedContext, running, after];
+        let reads = 0;
+        const executor = makeExecutor(call => {
+            reads++;
+            return states[Math.min(call, states.length - 1)];
+        });
+        const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 1);
+        assert.equal(await handler.handleStepOver(), after.toString());
+        assert.equal(reads, states.length);
+    });
+
+    test('an unobserved initial frame can complete on its first tracked stop', async () => {
+        const before = lineState(10);
+        const after = before.clone();
+        after.paused = true;
+        after.stopSequence = 1;
+        let reads = 0;
+        const executor = makeExecutor(call => {
+            reads++;
+            return call === 0 ? before : after;
+        });
+        const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.3);
+        assert.equal(await handler.handleStepOver(), after.toString());
+        assert.equal(reads, 2);
+    });
+
+    test('a tracked step still completes on termination without another stop', async () => {
+        const before = lineState(10);
+        before.paused = true;
+        before.stopSequence = 1;
+        const after = new DebugState();
+        const executor = makeExecutor(call => call === 0 ? before : after);
+        const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.3);
+        assert.equal(await handler.handleStepOver(), after.toString());
+    });
+
+    test('an unchanged observed stop still waits for the bounded timeout', async () => {
+        const state = lineState(10);
+        state.paused = true;
+        state.stopSequence = 1;
+        const handler = new DebuggingHandler(makeExecutor(() => state), {} as IDebugConfigurationManager, 0.15);
+        const started = Date.now();
+        assert.equal(await handler.handleStepOver(), state.toString());
+        assert.ok(Date.now() - started >= 100);
+    });
+
+    test('continue from an observed stop still returns on resume', async () => {
+        const before = lineState(10);
+        before.paused = true;
+        before.stopSequence = 1;
+        const running = new DebugState();
+        running.sessionActive = true;
+        running.paused = false;
+        let reads = 0;
+        const executor = makeExecutor(call => {
+            reads++;
+            return call === 0 ? before : running;
+        });
+        const handler = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.3);
+        assert.equal(await handler.handleContinue(), running.toString());
+        assert.equal(reads, 2);
     });
 });
 

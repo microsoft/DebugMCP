@@ -7,6 +7,7 @@ suite('Explicit debug execution state (#157)', () => {
 	test('defaults to unknown and inactive, including serialized paused status', () => {
 		const state = new DebugState();
 		assert.equal(state.paused, null);
+		assert.equal(state.stopSequence, null);
 		assert.equal(state.isPaused(), false);
 		assert.equal(JSON.parse(state.toString()).paused, false);
 	});
@@ -56,17 +57,22 @@ suite('Explicit debug execution state (#157)', () => {
 			const state = new DebugState();
 			state.sessionActive = true;
 			state.paused = paused;
+			state.stopSequence = 7;
 			state.updateContext(0, 0);
 			const clone = state.clone();
 			assert.equal(clone.paused, paused);
+			assert.equal(clone.stopSequence, 7);
+			assert.equal('stopSequence' in JSON.parse(clone.toString()), false);
 			assert.equal(clone.isPaused(), state.isPaused());
 			clone.reset();
 			assert.equal(clone.paused, null);
+			assert.equal(clone.stopSequence, null);
 			assert.equal(clone.frameId, null);
 			assert.equal(clone.threadId, null);
 			assert.equal(clone.isPaused(), false);
 			assert.equal(state.sessionActive, true);
 			assert.equal(state.paused, paused);
+			assert.equal(state.stopSequence, 7);
 		});
 	}
 });
