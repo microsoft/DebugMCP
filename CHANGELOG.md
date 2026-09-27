@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+- Standalone CLI breakpoint tools remain usable between debug sessions. Adding, removing, and clearing breakpoints after termination, stopping, disposal, or failed startup no longer try to synchronize with an inactive adapter; saved changes are applied on the next launch (#161).
+
 ### Added
 - **Claude Code auto-registration** - Claude Code is now offered in the agent selection popup and configured via `~/.claude.json`'s user-scope `mcpServers` field. Claude Desktop connects via its Custom Connector UI instead of a static config file; the README's manual configuration section covers both.
 

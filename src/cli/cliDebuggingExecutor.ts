@@ -48,6 +48,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			throw new Error('A debug session is already active. Stop it before starting another.');
 		}
 		if (this.client) {
+			this.initialized = false;
 			await this.client.close();
 			this.client = undefined;
 		}
@@ -105,6 +106,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			}
 			return true;
 		} catch (error) {
+			this.initialized = false;
 			await client.close();
 			this.client = undefined;
 			this.state = 'terminated';
@@ -128,6 +130,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 				terminateDebuggee: true
 			});
 		} finally {
+			this.initialized = false;
 			await client.close();
 			this.client = undefined;
 			this.state = 'terminated';
@@ -139,6 +142,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 
 	public async dispose(): Promise<void> {
 		const client = this.client;
+		this.initialized = false;
 		this.client = undefined;
 		if (client) {
 			await client.close();
@@ -383,6 +387,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			this.emitState();
 		});
 		const terminated = () => {
+			this.initialized = false;
 			this.state = 'terminated';
 			this.threadId = undefined;
 			this.frameId = undefined;
