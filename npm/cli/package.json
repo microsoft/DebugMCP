@@ -1,6 +1,6 @@
 {
   "name": "debugmcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Standalone MCP debugger host for explicitly configured Debug Adapter Protocol adapters.",
   "license": "MIT",
   "author": "Microsoft Corporation",
