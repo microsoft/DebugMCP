@@ -12,6 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 - **Claude Code auto-registration** - Claude Code is now offered in the agent selection popup and configured via `~/.claude.json`'s user-scope `mcpServers` field. Claude Desktop connects via its Custom Connector UI instead of a static config file; the README's manual configuration section covers both.
 
+## [2.4.2] - 2026-09-27
+
+### Fixed
+- Bound `restart_debugging` by the configured operation timeout, preserving restart failures and reporting unacknowledged completion instead of leaving the worker call pending. This safeguards against Cortex-Debug v1.12.1's missing successful restart response without mistaking stopped events for confirmed success (#160).
+
 ## [2.4.1] - 2026-09-17
 
 ### Fixed

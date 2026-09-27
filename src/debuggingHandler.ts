@@ -5,6 +5,7 @@ import { DebugConfigurationManager, IDebugConfigurationManager } from './utils/d
 import { DebugState } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { logger } from './utils/logger';
+import { withTimeout } from './utils/withTimeout';
 import {
     isSensitiveExpression,
     isSensitiveName,
@@ -66,7 +67,6 @@ function describeLocation(state: DebugState): string {
  */
 export class DebuggingHandler implements IDebuggingHandler {
     private readonly numNextLines: number = 3;
-    private readonly executionDelay: number = 300; // ms to wait for debugger updates
     private readonly timeoutInSeconds: number;
 
     constructor(
@@ -389,10 +389,15 @@ export class DebuggingHandler implements IDebuggingHandler {
                 throw new Error('No active debug session to restart');
             }
 
-            await this.executor.restart();
-            
-            // Wait for debugger to restart
-            await new Promise(resolve => setTimeout(resolve, this.executionDelay));
+            await withTimeout(
+                this.executor.restart(),
+                this.timeoutInSeconds * 1000,
+                () => new Error(
+                    `Restart timed out after ${this.timeoutInSeconds}s without completion acknowledgement. ` +
+                    'The target may already have restarted; the request has not been cancelled. ' +
+                    'Check get_debug_status and the Debug Console before retrying.'
+                )
+            );
 
             return 'Debug session restarted successfully';
         } catch (error) {

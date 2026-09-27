@@ -86,6 +86,19 @@ state without issuing another pause or waiting for a location change. For a
 running session, it dispatches pause and waits for a stopped state or session
 termination, bounded by the operation timeout.
 
+### Restart Completion
+
+`handleRestart()` waits for the executor's restart acknowledgement, bounded by
+the configured operation timeout. It returns immediately after acknowledgement,
+without an arbitrary settling delay. A continued/stopped event, even at a new
+location, does not prove that all restart commands succeeded.
+
+If completion is not acknowledged, the handler reports an error explaining that
+the target may already have restarted and the underlying request was not
+cancelled. It does not automatically retry or stop the session. This protects
+both hosts from an unresponsive restart; notably, Cortex-Debug v1.12.1 omits its
+successful DAP restart response. Actual command failures still propagate.
+
 ### Root Cause Analysis
 
 When debugging stops, the handler prompts AI agents to consider whether they found the root cause or just a symptom, encouraging deeper investigation.

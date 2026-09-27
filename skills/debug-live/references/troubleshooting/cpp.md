@@ -72,6 +72,27 @@
 - **Segmentation fault:** Use backtrace to find the crashing line, check pointer operations
 - **Optimized away variables:** Compile with `-O0` to disable optimizations
 
+## Cortex-Debug restart hangs
+
+Cortex-Debug v1.12.1 can reset the target without acknowledging the DAP `restart`
+request. Its [successful restart handler](https://github.com/Marus/cortex-debug/blob/652d042da96d51b8f4b13d42d2e74df8efc1e28f/src/gdb.ts#L1543-L1612)
+resolves an internal promise but never sends the response VS Code awaits.
+DebugMCP bounds that wait using `debugmcp.timeoutInSeconds` and reports a timeout,
+not a false success based on a continued/stopped event.
+
+After a restart timeout, inspect `get_debug_status` and the Debug Console before
+retrying: the device may already have reset, and timing out does not cancel the
+request. Do not automatically reset it again or tear down an embedded session.
+For diagnosis, record the installed Cortex-Debug and VS Code versions and enable
+`"showDevDebugOutput": "vscode"` in the launch configuration for a subsequent
+reproduction. Look for a `restart` request and its matching response, and sanitize
+logs before sharing them.
+
+Do not assume every Cortex-Debug version uses this path. Newer upstream code
+[disables DAP restart](https://github.com/Marus/cortex-debug/commit/6236742f20884c5cb57b4e7f24394b3a942cd4f5)
+in favor of VS Code's session teardown/relaunch. A timeout safeguards the client;
+it does not repair a missing response in the adapter.
+
 ## Memory Debugging:
 - **Valgrind:** `valgrind --leak-check=full ./program`
 - **Address Sanitizer:** Compile with `-fsanitize=address -fno-omit-frame-pointer`
