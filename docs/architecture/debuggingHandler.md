@@ -13,6 +13,7 @@ Debugging is inherently asynchronous - when you step over a line, the debugger t
 ## Responsibility
 
 - Orchestrate debugging operations (start, stop, step, breakpoints)
+- Preserve language-extension virtual source URIs when opening documents and setting breakpoints
 - Detect when debugger state has meaningfully changed after commands
 - Format debug state into human/AI-readable responses
 - Recursively format explicitly requested structs and arrays
@@ -98,6 +99,13 @@ the target may already have restarted and the underlying request was not
 cancelled. It does not automatically retry or stop the session. This protects
 both hosts from an unresponsive restart; notably, Cortex-Debug v1.12.1 omits its
 successful DAP restart response. Actual command failures still propagate.
+
+### Virtual source documents
+
+Breakpoint and logpoint locations may be native paths or VS Code virtual-document URIs.
+`src/utils/sourceUri.ts` keeps custom schemes intact instead of converting them into malformed
+`file:` URIs. This is required for language-extension sources such as Business Central `.dal`
+documents served through the `al-preview:` scheme.
 
 ### Root Cause Analysis
 
