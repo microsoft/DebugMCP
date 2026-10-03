@@ -3,10 +3,16 @@
 Let AI agents debug your code inside VS Code - set breakpoints, step through execution, inspect variables, and evaluate expressions. Works with **Codex**, **GitHub Copilot**, **GitHub Copilot CLI**, **Claude Code**, **Cline**, **Cursor**, **Windsurf**, **Roo Code**, and any MCP-compatible assistant. Compatible with any VS Code supported coding language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.4.1-green.svg)](https://github.com/microsoft/DebugMCP)
+
+[![Version](https://img.shields.io/badge/version-2.4.3-green.svg)](https://github.com/microsoft/DebugMCP)
+
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
+[![Open VSX](https://img.shields.io/badge/Open%20VSX-Install-blue.svg)](https://open-vsx.org/extension/ozzafar/debugmcpextension)
+
+[![npm](https://img.shields.io/badge/npm-debugmcp-red.svg)](https://www.npmjs.com/package/debugmcp)
 
 > 🚀 **DebugMCP CLI is now available on npm!** Debug directly from the
 > terminal **without requiring VS Code or any IDE at all** by connecting AI
@@ -38,7 +44,11 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 ## 🚀 Quick Install
 
-**[Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)** or use the direct link: `vscode:extension/ozzafar.debugmcpextension`
+**[Install DebugMCP from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)** or use the direct link: `vscode:extension/ozzafar.debugmcpextension`
+
+**[Install DebugMCP from Open VSX Registry](https://open-vsx.org/extension/ozzafar/debugmcpextension)**
+
+**[Install debugmcp-cli from npm](https://www.npmjs.com/package/debugmcp)**
 
 ## Table of Contents
 - [Overview](#overview)
