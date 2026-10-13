@@ -133,7 +133,7 @@
     "test:skill-trigger-agent": "node scripts/test-debug-skill-trigger.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@types/express": "^5.0.3",
     "express": "^5.2.1",
     "zod": "^3.25.76"
