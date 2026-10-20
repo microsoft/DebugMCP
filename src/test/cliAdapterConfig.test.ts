@@ -16,13 +16,16 @@ import {
 suite('CLI adapter configuration', () => {
 	let workspace: string;
 	let originalAppData: string | undefined;
+	let originalXdgConfigHome: string | undefined;
 	let appData: string;
 
 	setup(async () => {
 		workspace = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'debugmcp-cli-project-'));
 		appData = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'debugmcp-cli-user-'));
 		originalAppData = process.env.APPDATA;
+		originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 		process.env.APPDATA = appData;
+		process.env.XDG_CONFIG_HOME = appData;
 	});
 
 	teardown(async () => {
@@ -30,6 +33,11 @@ suite('CLI adapter configuration', () => {
 			delete process.env.APPDATA;
 		} else {
 			process.env.APPDATA = originalAppData;
+		}
+		if (originalXdgConfigHome === undefined) {
+			delete process.env.XDG_CONFIG_HOME;
+		} else {
+			process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
 		}
 		await fs.promises.rm(workspace, { recursive: true, force: true });
 		await fs.promises.rm(appData, { recursive: true, force: true });
@@ -104,7 +112,7 @@ suite('CLI adapter configuration', () => {
 					type: 'coreclr',
 					extensions: ['.cs'],
 					launch: {
-						program: '${workspaceFolder}\\bin\\Calculator.exe',
+						program: path.join('${workspaceFolder}', 'bin', 'Calculator.exe'),
 						args: ['${file}', '${fileBasenameNoExtension}'],
 						sourceFileMap: {
 							'/source': '${fileDirname}'

@@ -4,6 +4,7 @@ import * as http from 'http';
 import { IDebuggingHandler } from './debuggingHandler';
 import { WorkspaceRegistry, WindowRegistration } from './utils/workspaceRegistry';
 import { logger } from './utils/logger';
+import { isSourceUri } from './utils/sourceUri';
 
 /**
  * Router-window handler (one instance per MCP session) that forwards every
@@ -40,9 +41,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 	 * has no cached target we recover rather than fail - but only when a single
 	 * registered window makes the answer unambiguous.
 	 */
-	private resolveTarget(pathHint?: string): WindowRegistration {
+	private resolveTarget(pathHint?: string, virtualSource = false): WindowRegistration {
 		if (pathHint) {
-			const found = this.registry.findByPath(pathHint);
+			const found = virtualSource ? undefined : this.registry.findByPath(pathHint);
 			const candidates = this.registry
 				.list()
 				.map((w) => `pid=${w.pid} port=${w.controlPort} folders=[${w.workspaceFolders.join(', ') || 'none'}]`)
@@ -62,7 +63,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 			}
 		}
 		if (!this.target) {
-			throw new Error(this.noTargetMessage(pathHint));
+			throw new Error(this.noTargetMessage(pathHint, virtualSource));
 		}
 		return this.target;
 	}
@@ -91,12 +92,21 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		return undefined;
 	}
 
-	private noTargetMessage(pathHint?: string): string {
+	private noTargetMessage(pathHint?: string, virtualSource = false): string {
 		const windows = this.registry.list();
 		const openList = windows
 			.map((w) => (w.workspaceFolders.length ? w.workspaceFolders.join(', ') : '(no folder)'))
 			.join('; ');
 		if (pathHint) {
+			if (virtualSource) {
+				return (
+					`DebugMCP could not select a VS Code window for virtual source URI "${pathHint}". ` +
+					'Pass workingDirectory to identify the workspace that owns the debug session. ' +
+					(openList
+						? `Currently registered workspaces: ${openList}.`
+						: 'No DebugMCP-enabled VS Code windows are currently registered.')
+				);
+			}
 			return (
 				`DebugMCP could not find an open VS Code window whose workspace contains "${pathHint}". ` +
 				(openList
@@ -113,8 +123,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		);
 	}
 
-	private async forward(op: string, args: unknown, pathHint?: string): Promise<string> {
-		const target = this.resolveTarget(pathHint);
+	private async forward(op: string, args: unknown, pathHint?: string, virtualSource = false): Promise<string> {
+		const target = this.resolveTarget(pathHint, virtualSource);
 		logger.info(`Forwarding ${op} to pid=${target.pid} port=${target.controlPort}${pathHint ? '' : ' (cached target, no path hint)'}`);
 		try {
 			return await this.post(target, op, args);
@@ -240,16 +250,19 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 		return this.forward('handleRestart', {});
 	}
 
-	public handleAddBreakpoint(args: { fileFullPath: string; line: number; condition?: string }): Promise<string> {
-		return this.forward('handleAddBreakpoint', args, args.fileFullPath);
+	public handleAddBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; condition?: string }): Promise<string> {
+		const virtualSource = !args.workingDirectory && isSourceUri(args.fileFullPath);
+		return this.forward('handleAddBreakpoint', args, args.workingDirectory || args.fileFullPath, virtualSource);
 	}
 
-	public handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string> {
-		return this.forward('handleAddLogpoint', args, args.fileFullPath);
+	public handleAddLogpoint(args: { fileFullPath: string; workingDirectory?: string; line: number; logMessage: string; condition?: string }): Promise<string> {
+		const virtualSource = !args.workingDirectory && isSourceUri(args.fileFullPath);
+		return this.forward('handleAddLogpoint', args, args.workingDirectory || args.fileFullPath, virtualSource);
 	}
 
-	public handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string> {
-		return this.forward('handleRemoveBreakpoint', args, args.fileFullPath);
+	public handleRemoveBreakpoint(args: { fileFullPath: string; workingDirectory?: string; line: number }): Promise<string> {
+		const virtualSource = !args.workingDirectory && isSourceUri(args.fileFullPath);
+		return this.forward('handleRemoveBreakpoint', args, args.workingDirectory || args.fileFullPath, virtualSource);
 	}
 
 	public handleClearAllBreakpoints(): Promise<string> {
