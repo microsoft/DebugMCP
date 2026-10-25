@@ -12,7 +12,19 @@ interface ISessionExecutionState {
 	stopSequence?: number;
 	defaultStopSequence?: number;
 	threadStopSequences: Map<number, number>;
+	pendingResumes: Map<number, IResumeRequest>;
 }
+
+interface IResumeRequest {
+	command: string;
+	threadId?: number;
+	singleThread: boolean;
+	revision: number;
+}
+
+const RESUME_COMMANDS = new Set([
+	'continue', 'next', 'stepIn', 'stepOut', 'stepBack', 'reverseContinue', 'goto', 'restartFrame'
+]);
 
 type DebugTrackerApi = Pick<typeof vscode.debug,
 	'registerDebugAdapterTrackerFactory' | 'onDidTerminateDebugSession'>;
@@ -42,6 +54,7 @@ export class DebugSessionTracker implements vscode.Disposable {
 					const state: ISessionExecutionState = {
 						threads: new Map(),
 						threadStopSequences: new Map(),
+						pendingResumes: new Map(),
 						unscopedStop: false,
 						revision: ++this.revision
 					};
@@ -54,6 +67,11 @@ export class DebugSessionTracker implements vscode.Disposable {
 						}
 					};
 					return {
+						onWillReceiveMessage: (message: unknown) => {
+							if (this.sessions.get(session.id) === state) {
+								this.observeRequest(state, message);
+							}
+						},
 						onDidSendMessage: (message: unknown) => {
 							if (this.sessions.get(session.id) === state) {
 								this.observe(session, state, message);
@@ -122,7 +140,14 @@ export class DebugSessionTracker implements vscode.Disposable {
 	}
 
 	private observe(session: vscode.DebugSession, state: ISessionExecutionState, message: unknown): void {
-		if (!isRecord(message) || message.type !== 'event') {
+		if (!isRecord(message)) {
+			return;
+		}
+		if (message.type === 'response') {
+			this.observeResponse(state, message);
+			return;
+		}
+		if (message.type !== 'event') {
 			return;
 		}
 		if (message.event === 'output') {
@@ -178,5 +203,82 @@ export class DebugSessionTracker implements vscode.Disposable {
 		} else if (threadId !== undefined) {
 			state.threads.set(threadId, false);
 		}
+	}
+
+	private observeRequest(state: ISessionExecutionState, message: unknown): void {
+		if (!isRecord(message) || message.type !== 'request' || typeof message.command !== 'string' ||
+			!RESUME_COMMANDS.has(message.command)) {
+			return;
+		}
+		const args = message.arguments;
+		if (typeof message.seq !== 'number' || !Number.isSafeInteger(message.seq) ||
+			!isRecord(args) ||
+			(args.threadId !== undefined &&
+				(typeof args.threadId !== 'number' || !Number.isInteger(args.threadId) || args.threadId < 0)) ||
+			(args.singleThread !== undefined && typeof args.singleThread !== 'boolean')) {
+			logger.warn('Ignoring malformed DAP resume request.');
+			return;
+		}
+		if (state.pendingResumes.size >= 256) {
+			state.pendingResumes.delete(state.pendingResumes.keys().next().value!);
+			logger.warn('Discarding oldest pending DAP resume request at tracking limit.');
+		}
+		state.pendingResumes.set(message.seq, {
+			command: message.command,
+			threadId: typeof args.threadId === 'number' ? args.threadId : undefined,
+			singleThread: args.singleThread === true,
+			revision: state.revision
+		});
+	}
+
+	private observeResponse(state: ISessionExecutionState, message: Record<string, unknown>): void {
+		if (typeof message.request_seq !== 'number') {
+			return;
+		}
+		const request = state.pendingResumes.get(message.request_seq);
+		if (!request) {
+			return;
+		}
+		state.pendingResumes.delete(message.request_seq);
+		if (message.success !== true || message.command !== request.command) {
+			return;
+		}
+		const body = message.body;
+		if (body !== undefined && !isRecord(body)) {
+			logger.warn('Ignoring malformed DAP resume response.');
+			return;
+		}
+		if (request.command === 'continue' && body?.allThreadsContinued !== undefined &&
+			typeof body.allThreadsContinued !== 'boolean') {
+			logger.warn('Ignoring malformed DAP continue response.');
+			return;
+		}
+		const allThreads = request.command === 'continue'
+			? body?.allThreadsContinued !== false
+			: !request.singleThread;
+		// A stop may arrive before the response. Never overwrite a newer stop.
+		if ((state.defaultStopSequence ?? 0) > request.revision) {
+			return;
+		}
+		if (allThreads) {
+			state.defaultPaused = false;
+			state.unscopedStop = false;
+			state.defaultStopSequence = undefined;
+			for (const threadId of state.threads.keys()) {
+				if ((state.threadStopSequences.get(threadId) ?? 0) <= request.revision) {
+					state.threads.delete(threadId);
+					state.threadStopSequences.delete(threadId);
+				}
+			}
+		} else if (request.threadId !== undefined) {
+			if ((state.threadStopSequences.get(request.threadId) ?? 0) > request.revision) {
+				return;
+			}
+			state.threads.set(request.threadId, false);
+		} else {
+			logger.warn('Ignoring thread-specific DAP resume response without a request thread ID.');
+			return;
+		}
+		state.revision = ++this.revision;
 	}
 }

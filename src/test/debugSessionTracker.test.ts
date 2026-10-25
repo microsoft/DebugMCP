@@ -59,6 +59,105 @@ function send(adapter: vscode.DebugAdapterTracker, event: string, body?: unknown
 	adapter.onDidSendMessage?.({ type: 'event', event, body });
 }
 
+function resumeRequest(adapter: vscode.DebugAdapterTracker, command: string, args: unknown = { threadId: 0 }): void {
+	adapter.onWillReceiveMessage?.({ type: 'request', seq: 42, command, arguments: args });
+}
+
+function resumeResponse(adapter: vscode.DebugAdapterTracker, command: string, body?: unknown, success = true): void {
+	adapter.onDidSendMessage?.({ type: 'response', request_seq: 42, command, success, body });
+}
+
+suite('DAP successful resume responses (#177)', () => {
+	let fixture: TrackerFixture;
+	let session: vscode.DebugSession;
+	let adapter: vscode.DebugAdapterTracker;
+
+	setup(async () => {
+		fixture = new TrackerFixture();
+		session = createSession();
+		adapter = await fixture.attach(session);
+		send(adapter, 'stopped', { threadId: 0, allThreadsStopped: true });
+	});
+	teardown(() => fixture.dispose());
+
+	for (const command of ['continue', 'next', 'stepIn', 'stepOut', 'stepBack', 'reverseContinue', 'goto', 'restartFrame']) {
+		test(`${command} success resumes without a continued event`, () => {
+			resumeRequest(adapter, command, command === 'restartFrame' ? { frameId: 7 } : { threadId: 0 });
+			assert.equal(fixture.tracker.getPausedState(session.id), true);
+			resumeResponse(adapter, command);
+			assert.equal(fixture.tracker.getPausedState(session.id), false);
+			assert.equal(fixture.tracker.getStopSequence(session.id), undefined);
+			send(adapter, 'stopped', { threadId: 0 });
+			assert.equal(fixture.tracker.getPausedState(session.id), true);
+		});
+
+		test(`${command} failure preserves the stopped state`, () => {
+			resumeRequest(adapter, command);
+			resumeResponse(adapter, command, undefined, false);
+			assert.equal(fixture.tracker.getPausedState(session.id), true);
+		});
+	}
+
+	test('partial continue and single-thread steps preserve other stopped threads', () => {
+		resumeRequest(adapter, 'continue');
+		resumeResponse(adapter, 'continue', { allThreadsContinued: false });
+		assert.equal(fixture.tracker.getPausedState(session.id, 0), false);
+		assert.equal(fixture.tracker.getPausedState(session.id, 1), true);
+		send(adapter, 'stopped', { threadId: 0 });
+		resumeRequest(adapter, 'next', { threadId: 0, singleThread: true });
+		resumeResponse(adapter, 'next');
+		assert.equal(fixture.tracker.getPausedState(session.id, 0), false);
+		assert.equal(fixture.tracker.getPausedState(session.id, 1), true);
+	});
+
+	test('a stop arriving before a successful response remains paused', () => {
+		resumeRequest(adapter, 'next');
+		send(adapter, 'stopped', { threadId: 0 });
+		const stop = fixture.tracker.getStopSequence(session.id, 0);
+		resumeResponse(adapter, 'next');
+		assert.equal(fixture.tracker.getPausedState(session.id, 0), true);
+		assert.equal(fixture.tracker.getStopSequence(session.id, 0), stop);
+	});
+
+	test('an unrelated newer stop survives while the requested thread resumes', () => {
+		resumeRequest(adapter, 'continue');
+		send(adapter, 'stopped', { threadId: 1 });
+		resumeResponse(adapter, 'continue');
+		assert.equal(fixture.tracker.getPausedState(session.id, 0), false);
+		assert.equal(fixture.tracker.getPausedState(session.id, 1), true);
+	});
+
+	for (const stop of [{ allThreadsStopped: true }, {}]) {
+		test(`newer all-thread/unscoped stops survive late responses (${JSON.stringify(stop)})`, () => {
+			resumeRequest(adapter, 'continue');
+			send(adapter, 'stopped', stop);
+			resumeResponse(adapter, 'continue');
+			assert.equal(fixture.tracker.getPausedState(session.id, 0), true);
+		});
+	}
+
+	test('explicit continued events and duplicate responses are harmless', () => {
+		resumeRequest(adapter, 'continue');
+		send(adapter, 'continued', { threadId: 0 });
+		resumeResponse(adapter, 'continue');
+		assert.equal(fixture.tracker.getPausedState(session.id), false);
+		send(adapter, 'stopped', { threadId: 0 });
+		resumeResponse(adapter, 'continue');
+		assert.equal(fixture.tracker.getPausedState(session.id, 0), true);
+	});
+
+	test('uncorrelated, mismatched, malformed, and non-resuming responses do not resume', () => {
+		resumeResponse(adapter, 'continue');
+		resumeRequest(adapter, 'continue');
+		resumeResponse(adapter, 'next');
+		resumeRequest(adapter, 'continue');
+		resumeResponse(adapter, 'continue', { allThreadsContinued: 'yes' });
+		resumeRequest(adapter, 'scopes');
+		resumeResponse(adapter, 'scopes');
+		assert.equal(fixture.tracker.getPausedState(session.id), true);
+	});
+});
+
 suite('DAP execution tracking (#157)', () => {
 	let fixture: TrackerFixture;
 	let session: vscode.DebugSession;
@@ -337,6 +436,18 @@ suite('VS Code observed execution snapshots (#157)', () => {
 		send(adapter, 'continued', { threadId: 0 });
 		const state = await executor.getCurrentDebugState();
 		assert.equal(state.paused, false);
+		assert.equal(state.hasValidContext(), false);
+		assert.equal(executor.getActiveFrameId(), undefined);
+		assert.equal(requests, 0);
+	});
+
+	test('successful resume responses suppress stale frames without continued events (#177)', async () => {
+		item = { session, threadId: 0, frameId: 0 };
+		send(adapter, 'stopped', { reason: 'pause', threadId: 0 });
+		resumeRequest(adapter, 'continue');
+		resumeResponse(adapter, 'continue');
+		const state = await executor.getCurrentDebugState();
+		assert.equal(state.isPaused(), false);
 		assert.equal(state.hasValidContext(), false);
 		assert.equal(executor.getActiveFrameId(), undefined);
 		assert.equal(requests, 0);
