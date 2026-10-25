@@ -34,12 +34,6 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 ## ✨ What's New
 
-### 2.4.4
-- **Opt-in logpoint output retrieval** - `get_debug_output` reads captured debugger output by session, with prefix/category filters and incremental cursors. Capture is disabled by default; see [Debug output capture](#debug-output-capture).
-- **Consistent debug status** - function names and source locations now match the selected evaluation frame. Successful Continue/Step responses update execution state even when adapters omit a `continued` event, without discarding newer stops.
-- **Remote skill installation** - extension activation refreshes `debug-live` in the extension host's home, including fresh Dev Containers and remote hosts without existing agent configuration or onboarding.
-- **Restart without a missing-response wait** - when a fresh stop is observed but the adapter has not acknowledged the restart, `restart_debugging` returns an explicit **completion unconfirmed** result instead of waiting for the operation timeout. This does not claim that all restart commands succeeded; acknowledged success and reported failures retain their behavior.
-
 ### 2.4
 - **Standalone DebugMCP CLI** — install [`debugmcp`](https://www.npmjs.com/package/debugmcp) from npm and give MCP-compatible agents direct access to explicitly configured DAP adapters without running VS Code. The CLI supports any language with a DAP adapter that communicates over stdio, configures supported agents, and installs the `debug-live` skill automatically.
 
