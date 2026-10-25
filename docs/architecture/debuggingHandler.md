@@ -88,16 +88,21 @@ termination, bounded by the operation timeout.
 
 ### Restart Completion
 
-`handleRestart()` waits for the executor's restart acknowledgement, bounded by
-the configured operation timeout. It returns immediately after acknowledgement,
-without an arbitrary settling delay. A continued/stopped event, even at a new
-location, does not prove that all restart commands succeeded.
+`handleRestart()` races the executor's acknowledgement against observation of a
+fresh stopped-event sequence in the same session, bounded by the operation
+timeout. An acknowledgement returns success without an arbitrary settling delay.
+A fresh stop returns an explicit **completion unconfirmed** result, not success:
+execution was observed after the request, but this does not prove that all
+restart commands succeeded. Existing paused state, source/UI changes, continued
+events alone, and stops in another session do not qualify.
 
-If completion is not acknowledged, the handler reports an error explaining that
+If neither signal arrives, the handler reports a timeout explaining that
 the target may already have restarted and the underlying request was not
 cancelled. It does not automatically retry or stop the session. This protects
 both hosts from an unresponsive restart; notably, Cortex-Debug v1.12.1 omits its
-successful DAP restart response. Actual command failures still propagate.
+successful DAP restart response. Actual command failures received before the
+result still propagate. A later rejection after an unconfirmed result is logged;
+the underlying request is not cancelled. Polling stops when the call returns.
 
 ### Root Cause Analysis
 

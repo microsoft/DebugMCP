@@ -384,13 +384,48 @@ export class DebuggingHandler implements IDebuggingHandler {
      * Restart the debugging session
      */
     public async handleRestart(): Promise<string> {
+        const observation = new AbortController();
+        let returnedUnconfirmed = false;
         try {
             if (!(await this.executor.hasActiveSession())) {
                 throw new Error('No active debug session to restart');
             }
 
-            await withTimeout(
-                this.executor.restart(),
+            const outcome = await withTimeout(
+                (async () => {
+                    const sessionId = this.executor.getActiveSession()?.id;
+                    const before = await this.executor.getCurrentDebugState(this.numNextLines);
+                    if (observation.signal.aborted) {
+                        throw new Error('Restart observation cancelled');
+                    }
+                    const acknowledgement = this.executor.restart().then(
+                        () => 'acknowledged',
+                        error => {
+                            if (returnedUnconfirmed) {
+                                logger.warn('Restart failed after returning an unconfirmed result:', error);
+                            }
+                            throw error;
+                        }
+                    );
+                    if (!sessionId) {
+                        return acknowledgement;
+                    }
+                    const freshStop = async () => {
+                        while (!observation.signal.aborted) {
+                            const state = await this.executor.getCurrentDebugState(this.numNextLines);
+                            if (!observation.signal.aborted && state.sessionActive && state.isPaused() &&
+                                this.executor.getActiveSession()?.id === sessionId &&
+                                state.stopSequence !== null && state.stopSequence !== before.stopSequence) {
+                                return 'observed';
+                            }
+                            if (!observation.signal.aborted) {
+                                await new Promise(resolve => setTimeout(resolve, 50));
+                            }
+                        }
+                        throw new Error('Restart observation cancelled');
+                    };
+                    return Promise.race([acknowledgement, freshStop()]);
+                })(),
                 this.timeoutInSeconds * 1000,
                 () => new Error(
                     `Restart timed out after ${this.timeoutInSeconds}s without completion acknowledgement. ` +
@@ -399,9 +434,19 @@ export class DebuggingHandler implements IDebuggingHandler {
                 )
             );
 
+            if (outcome === 'observed') {
+                returnedUnconfirmed = true;
+                const message = 'The target stopped after the restart request; completion is unconfirmed ' +
+                    'because the adapter has not acknowledged it. The request has not been cancelled. ' +
+                    'Check get_debug_status and the Debug Console before retrying.';
+                logger.warn(message);
+                return message;
+            }
             return 'Debug session restarted successfully';
         } catch (error) {
             throw new Error(`Error restarting debug session: ${error}`);
+        } finally {
+            observation.abort();
         }
     }
 

@@ -251,7 +251,7 @@ export class DebugMCPServer {
 
         // Restart debugging tool
         server.registerTool('restart_debugging', {
-            description: 'Restart the debug session from the beginning with the same configuration.',
+            description: 'Restart the debug session from the beginning with the same configuration. A fresh stop without an adapter acknowledgement returns an explicit completion-unconfirmed result, not confirmed success.',
         }, async () => this.runTool('restart_debugging', () => debuggingHandler.handleRestart()));
 
         // Add breakpoint tool
