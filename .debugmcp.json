@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "adapters": {
+    "python": {
+      "command": "python",
+      "args": [
+        "-m",
+        "debugpy.adapter"
+      ],
+      "type": "python",
+      "extensions": [
+        ".py"
+      ],
+      "transport": "stdio"
+    }
+  }
+}
