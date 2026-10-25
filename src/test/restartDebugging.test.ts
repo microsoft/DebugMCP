@@ -8,6 +8,8 @@ import { DebuggingHandler } from '../debuggingHandler';
 import { CliDebuggingExecutor } from '../cli/cliDebuggingExecutor';
 import { CliDebugConfiguration } from '../cli/cliConfigurationManager';
 import { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
+import { DebugState } from '../debugState';
+import { logger } from '../utils/logger';
 
 suite('Restart completion (#160)', () => {
 	function handler(restart: () => Promise<void>, active = true, timeout = 0.05): DebuggingHandler {
@@ -76,6 +78,43 @@ suite('Restart completion (#160)', () => {
 			rejectRestart(new Error('cleanup'));
 		}
 	});
+
+	for (const scenario of ['different session', 'unchanged stop', 'running', 'UI-only change']) {
+		test(`does not mistake ${scenario} for restart observation (#172)`, async () => {
+			const executor = new CliDebuggingExecutor();
+			let sessionId = 'original';
+			let release: () => void = () => {};
+			let reads = 0;
+			const state = new DebugState();
+			state.sessionActive = true;
+			state.paused = true;
+			state.stopSequence = scenario === 'UI-only change' ? null : 1;
+			executor.hasActiveSession = async () => true;
+			executor.getActiveSession = () => ({ id: sessionId, name: 'test', type: 'fake' });
+			executor.getCurrentDebugState = async () => { reads++; return state.clone(); };
+			executor.restart = () => {
+				if (scenario === 'different session') {
+					sessionId = 'replacement';
+					state.stopSequence = 2;
+				} else if (scenario === 'running') {
+					state.paused = false;
+					state.stopSequence = null;
+				} else if (scenario === 'UI-only change') {
+					state.currentLine = 42;
+				}
+				return new Promise<void>(resolve => { release = resolve; });
+			};
+			const target = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.1);
+			try {
+				await assert.rejects(() => target.handleRestart(), /Restart timed out/);
+				const readsAtTimeout = reads;
+				await new Promise(resolve => setTimeout(resolve, 100));
+				assert.equal(reads, readsAtTimeout, 'observation polling must stop after timeout');
+			} finally {
+				release();
+			}
+		});
+	}
 });
 
 suite('Restart acknowledgement over DAP (#160)', () => {
@@ -116,10 +155,14 @@ function handle(request) {
 			stopped();
 			break;
 		case 'restart':
+			if (mode === 'unchanged') break;
 			send({ type: 'event', event: 'continued', body: { threadId: 1, allThreadsContinued: true } });
 			stopped();
 			if (mode === 'success') send(response);
 			if (mode === 'failure') send({ ...response, success: false, message: 'GDB restart rejected' });
+			if (mode === 'late-failure') {
+				setTimeout(() => send({ ...response, success: false, message: 'late GDB restart rejected' }), 150);
+			}
 			break;
 		case 'stackTrace':
 			send({ ...response, body: { stackFrames: [{ id: 4096, name: 'main', line: 2, column: 1 }] } });
@@ -160,22 +203,44 @@ process.stdin.on('data', chunk => {
 		}
 	});
 
-	for (const mode of ['success', 'failure', 'missing']) {
+	for (const mode of ['success', 'failure', 'missing', 'unchanged', 'late-failure']) {
 		test(`${mode} acknowledgement after a fresh stop`, async () => {
 			await executor.startDebugging(directory, { ...config, mode });
 			await executor.waitForDebugSessionReady(1_000);
 			const before = await executor.getCurrentDebugState();
 			assert.equal(before.isPaused(), true);
-			const target = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.1);
+			const target = new DebuggingHandler(executor, {} as IDebugConfigurationManager, 0.5);
 			if (mode === 'success') {
 				assert.match(await target.handleRestart(), /restarted successfully/);
+			} else if (mode === 'missing' || mode === 'late-failure') {
+				const start = Date.now();
+				const originalWarn = logger.warn;
+				const warnings: string[] = [];
+				logger.warn = (message, ...args) => { warnings.push([message, ...args].join(' ')); };
+				try {
+					const result = await target.handleRestart();
+					assert.match(result, /completion is unconfirmed/);
+					assert.doesNotMatch(result, /restarted successfully/);
+					assert.ok(Date.now() - start < 400, 'a fresh stop must not wait for the operation timeout');
+					assert.ok(warnings.some(message => message.includes('completion is unconfirmed')));
+					if (mode === 'late-failure') {
+						await new Promise(resolve => setTimeout(resolve, 200));
+						assert.ok(warnings.some(message => message.includes('late GDB restart rejected')));
+					}
+				} finally {
+					logger.warn = originalWarn;
+				}
 			} else {
 				await assert.rejects(() => target.handleRestart(),
 					mode === 'failure' ? /GDB restart rejected/ : /Restart timed out.*not been cancelled/);
 			}
 			const after = await executor.getCurrentDebugState();
 			assert.equal(after.isPaused(), true);
-			assert.notEqual(after.stopSequence, before.stopSequence);
+			if (mode === 'unchanged') {
+				assert.equal(after.stopSequence, before.stopSequence);
+			} else {
+				assert.notEqual(after.stopSequence, before.stopSequence);
+			}
 		});
 	}
 });
