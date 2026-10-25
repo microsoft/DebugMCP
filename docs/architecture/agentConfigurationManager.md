@@ -102,6 +102,12 @@ Code extension and standalone CLI use this installer. The npm package includes
 the complete skill tree, and `debugmcp configure` installs it while registering
 the selected agents.
 
+The extension's activation migration refreshes the skill unconditionally, before
+looking for agent configuration files. Fresh Dev Container/Remote extension hosts
+therefore install into their own home even without desktop MCP configuration or
+onboarding. Missing bundles and copy failures are reported in the DebugMCP log.
+Skill delivery does not depend on resolving desktop Copilot configuration paths.
+
 This fixes issue #105: earlier builds copied the skill next to each agent's config (e.g. `Code/User/skills/` for VS Code Copilot), a directory no harness scans, so the skill never loaded. Installing to `~/.agents/skills/` — which VS Code agent mode does scan — makes it discoverable.
 
 ## Key Code Locations
@@ -118,14 +124,16 @@ This fixes issue #105: earlier builds copied the skill next to each agent's conf
 
 ## User Flow
 
-1. Extension activates
+1. Extension activates and refreshes the bundled skill in the extension host's home
 2. Check if popup was previously shown
 3. If not, display multi-select dialog with supported agents
 4. For each selected agent, write/update config file
 5. Show success message with option to open config file
 6. Mark popup as shown after it is accepted or dismissed
 
-The bundled `debug-live` skill is installed into the standard skills directories (`~/.agents/skills/`, plus `~/.copilot/skills/` when present) during step 4, so every skills-compatible harness discovers it from one shared location.
+The bundled `debug-live` skill is refreshed in the standard skills directories
+at step 1 and also during explicit agent setup. Installation does not depend on
+accepting the popup or having an existing MCP registration.
 
 ## Commands
 

@@ -14,6 +14,7 @@ import {
     installDebugSkill
 } from './debugSkillInstaller';
 import { selectCopilotDebugMcpHost } from '../cli/copilotMcpConfig';
+import { logger } from './logger';
 export { AgentInfo, JsonAgentInfo, TomlAgentInfo } from './agentCatalog';
 
 export interface MCPServerConfig {
@@ -188,7 +189,7 @@ export class AgentConfigurationManager {
         const bundledSkillPath = this.getBundledSkillPath();
 
         if (!fs.existsSync(bundledSkillPath)) {
-            console.warn(`Bundled debugmcp skill not found at ${bundledSkillPath}; skipping skill install`);
+            logger.warn(`Bundled debugmcp skill not found at ${bundledSkillPath}; skipping skill install`);
             return null;
         }
 
@@ -196,12 +197,12 @@ export class AgentConfigurationManager {
         for (const destination of getDebugSkillInstallTargets()) {
             try {
                 await installDebugSkill(bundledSkillPath, destination);
-                console.log(`Installed debugmcp skill at ${destination}`);
+                logger.info(`Installed debugmcp skill at ${destination}`);
                 if (!primaryDestination) {
                     primaryDestination = destination;
                 }
             } catch (error) {
-                console.warn(`Failed to install debugmcp skill at ${destination}:`, error);
+                logger.warn(`Failed to install debugmcp skill at ${destination}:`, error);
             }
         }
 
@@ -256,6 +257,8 @@ export class AgentConfigurationManager {
      * This should be called on extension activation to ensure backward compatibility
      */
     public async migrateExistingConfigurations(): Promise<void> {
+        // Remote hosts may have no desktop agent config, but still need the skill.
+        await this.ensureSkillRegistered();
         const agents = await this.getSupportedAgents();
         let migrationCount = 0;
 
@@ -277,12 +280,6 @@ export class AgentConfigurationManager {
 
                         migrationCount++;
                         console.log(`Successfully migrated ${agent.displayName} configuration`);
-                    }
-
-                    // Back-compat: existing Codex users had only the MCP server registered.
-                    // If DebugMCP is configured, also ensure the bundled skill is installed.
-                    if (this.hasCodexDebugMCPSection(configContent)) {
-                        await this.ensureSkillRegistered();
                     }
 
                     continue;
@@ -332,9 +329,6 @@ export class AgentConfigurationManager {
                     console.log(`Successfully migrated ${agent.displayName} configuration`);
                 }
 
-                // Back-compat: existing users had only the MCP server registered.
-                // If DebugMCP is configured, also ensure the bundled skill is installed.
-                await this.ensureSkillRegistered();
             } catch (error) {
                 console.error(`Error migrating config for ${agent.name}:`, error);
                 // Continue with other agents even if one fails
@@ -358,13 +352,8 @@ export class AgentConfigurationManager {
         try {
             await this.installDebugMCPSkill();
         } catch (error) {
-            console.warn('Failed to ensure skill installation:', error);
+            logger.warn('Failed to ensure skill installation:', error);
         }
-    }
-
-    private hasCodexDebugMCPSection(configContent: string): boolean {
-        const lines = configContent.replace(/\r\n/g, '\n').split('\n');
-        return lines.some(line => isCodexDebugMCPSectionHeader(line));
     }
 
     private shouldMigrateCodexConfig(configContent: string): boolean {

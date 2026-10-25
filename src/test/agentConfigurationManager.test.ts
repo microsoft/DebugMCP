@@ -32,6 +32,37 @@ suite('AgentConfigurationManager JSON configuration', () => {
             await fs.promises.rm(tempDir, { recursive: true, force: true });
         }
     });
+
+});
+
+suite('Activation skill installation without desktop configuration (#174)', () => {
+	for (const scenario of ['no agents', 'missing configuration', 'malformed configuration', 'no DebugMCP entry']) {
+		test(`refreshes the skill on every activation with ${scenario}`, async () => {
+			const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'debugmcp-remote-skill-'));
+			try {
+				const manager = new AgentConfigurationManager({ extensionPath: directory } as vscode.ExtensionContext, 180, 3001);
+				const agents = await manager['getSupportedAgents']();
+				const copilot = agents.find(agent => agent.id === 'copilot');
+				assert.ok(copilot);
+				const configPath = path.join(directory, 'mcp.json');
+				if (scenario === 'malformed configuration') {
+					await fs.promises.writeFile(configPath, '{invalid');
+				} else if (scenario === 'no DebugMCP entry') {
+					await fs.promises.writeFile(configPath, '{"servers":{}}');
+				}
+				manager['getSupportedAgents'] = async () =>
+					scenario === 'no agents' ? [] : [{ ...copilot, configPath }];
+				let installs = 0;
+				manager['installDebugMCPSkill'] = async () => { installs++; return directory; };
+				await manager.migrateExistingConfigurations();
+				await manager.migrateExistingConfigurations();
+				assert.strictEqual(installs, 2);
+				assert.strictEqual(fs.existsSync(configPath), scenario === 'malformed configuration' || scenario === 'no DebugMCP entry');
+			} finally {
+				await fs.promises.rm(directory, { recursive: true, force: true });
+			}
+		});
+	}
 });
 
 suite('AgentConfigurationManager Claude Code configuration', () => {
