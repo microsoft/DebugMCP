@@ -6,7 +6,7 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.104.0+-blue.svg)](https://code.visualstudio.com/)
 
-[![Version](https://img.shields.io/badge/version-2.4.3-green.svg)](https://github.com/microsoft/DebugMCP)
+[![Version](https://img.shields.io/badge/version-2.4.4-green.svg)](https://github.com/microsoft/DebugMCP)
 
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-Install-blue.svg)](https://marketplace.visualstudio.com/items?itemName=ozzafar.debugmcpextension)
 
@@ -33,6 +33,12 @@ Let AI agents debug your code inside VS Code - set breakpoints, step through exe
 </p>
 
 ## ✨ What's New
+
+### 2.4.4
+- **Opt-in logpoint output retrieval** - `get_debug_output` reads captured debugger output by session, with prefix/category filters and incremental cursors. Capture is disabled by default; see [Debug output capture](#debug-output-capture).
+- **Consistent debug status** - function names and source locations now match the selected evaluation frame. Successful Continue/Step responses update execution state even when adapters omit a `continued` event, without discarding newer stops.
+- **Remote skill installation** - extension activation refreshes `debug-live` in the extension host's home, including fresh Dev Containers and remote hosts without existing agent configuration or onboarding.
+- **Restart without a missing-response wait** - when a fresh stop is observed but the adapter has not acknowledged the restart, `restart_debugging` returns an explicit **completion unconfirmed** result instead of waiting for the operation timeout. This does not claim that all restart commands succeeded; acknowledged success and reported failures retain their behavior.
 
 ### 2.4
 - **Standalone DebugMCP CLI** — install [`debugmcp`](https://www.npmjs.com/package/debugmcp) from npm and give MCP-compatible agents direct access to explicitly configured DAP adapters without running VS Code. The CLI supports any language with a DAP adapter that communicates over stdio, configures supported agents, and installs the `debug-live` skill automatically.
@@ -81,7 +87,9 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 | **step_out** | Step out of the current function | None |
 | **continue_execution** | Continue until next breakpoint | None |
 | **pause_execution** | Interrupt a freely-running program and stop at its current location (no breakpoint needed) | None |
-| **restart_debugging** | Restart the current debug session | None |
+| **restart_debugging** | Restart the current debug session; a fresh stop without acknowledgement returns an explicit completion-unconfirmed result, not confirmed success | None |
+| **get_debug_status** | Read paused/running/no-session status, the active session ID, and selected-frame details when paused; optionally wait for a pause | `waitForPauseSeconds` (optional, 0-600; bounded by the operation timeout) |
+| **get_debug_output** | Read captured output for one session; requires user-enabled capture and at least one filter | `sessionId` (required)<br>`prefix` and/or `category` (required filter; both are ANDed)<br>`cursor` (optional)<br>`limit` (optional, 1-100) |
 | **add_breakpoint** | Add a breakpoint at a specific line (optionally conditional) | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`condition` (optional) |
 | **add_logpoint** | Add a logpoint that logs a message (instead of pausing) when a line is reached | `fileFullPath` (required)<br>`line` (required, 1-based)<br>`logMessage` (required, `{expr}` interpolated)<br>`condition` (optional) |
 | **remove_breakpoint** | Remove a breakpoint from a specific line | `fileFullPath` (required)<br>`line` (required) |
@@ -98,6 +106,38 @@ DebugMCP is an MCP server that gives AI coding agents full control over the VS C
 > into the standard skills directories (`~/.agents/skills/`, plus `~/.copilot/skills/` when
 > present) so skills-compatible harnesses load the full workflow on demand. The server also
 > advertises MCP `instructions` pointing agents at it before debugging.
+
+### Debug output capture
+
+To read logpoint messages without pausing the program, enable
+`debugmcp.captureDebugOutput` in VS Code user settings before output is emitted.
+For the standalone CLI host, start it with `debugmcp serve --capture-output`.
+Capture is **off by default**, and MCP tools cannot enable it.
+
+Obtain `sessionId` from `get_debug_status` while the session is active, then call
+`get_debug_output`, for example:
+
+```json
+{
+  "sessionId": "<session-id-from-get_debug_status>",
+  "prefix": "[orders]",
+  "limit": 20
+}
+```
+
+Provide a nonempty `prefix` (up to 256 characters), a `category` (`console`,
+`stdout`, `stderr`, or `important`), or both. Reuse the returned `nextCursor` as
+`cursor` with the same filters to read new entries; `hasMore` indicates additional
+entries to scan, and `truncated` reports evicted history. Only DAP output events
+are captured, not existing Debug Console contents.
+
+Output stays in memory, bounded to 8 sessions and 1,000 events/256 KiB per
+session. Events over 8 KiB are replaced by an omission marker. History can
+remain after termination until eviction, but changing the capture setting or
+disposing the host clears it; output is not persisted or logged by the capture
+feature. Credential-pattern redaction happens before retention, but is
+**heuristic and event-local, not a guarantee that every secret is removed**.
+Enable capture only for output you intend to make available to the agent.
 
 ### 🎯 Debugging Best Practices
 
@@ -395,7 +435,8 @@ Configure DebugMCP behavior in VSCode settings:
 {
   "debugmcp.serverPort": 3001,
   "debugmcp.timeoutInSeconds": 180,
-  "debugmcp.bindHost": ["127.0.0.1", "::1"]
+  "debugmcp.bindHost": ["127.0.0.1", "::1"],
+  "debugmcp.captureDebugOutput": false
 }
 ```
 
@@ -404,6 +445,7 @@ Configure DebugMCP behavior in VSCode settings:
 | `debugmcp.serverPort` | `3001` | Port number for the MCP server |
 | `debugmcp.timeoutInSeconds` | `180` | Timeout for debugging operations |
 | `debugmcp.bindHost` | `["127.0.0.1", "::1"]` | Network interface(s) the HTTP server binds to. Accepts a string or array of strings. See [Security model](#security-model) before changing. |
+| `debugmcp.captureDebugOutput` | `false` | User-controlled, machine-scoped capture of bounded debugger output. See [Debug output capture](#debug-output-capture); agents cannot enable capture through MCP. |
 
 ### Security model
 
