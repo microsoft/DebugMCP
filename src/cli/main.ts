@@ -47,7 +47,7 @@ function printHelp(): void {
 	process.stdout.write(
 		'DebugMCP standalone CLI\n\n' +
 		'Usage:\n' +
-		'  debugmcp serve [--stdio] [--port 3001] [--timeout 300]\n' +
+		'  debugmcp serve [--stdio] [--port 3001] [--timeout 300] [--capture-output]\n' +
 		'  debugmcp adapter add python --command "python -m debugpy.adapter" [--user]\n' +
 		'  debugmcp adapter add <name> --command <path> --type <dap-type> --extensions <.ext...> [--args <arg...>] [--user]\n' +
 		'  debugmcp adapter list [--user]\n' +
@@ -220,7 +220,7 @@ async function validateAdapterProcess(
 }
 
 async function runServer(args: string[]): Promise<void> {
-	const options = parseOptions(args, ['stdio', 'port', 'timeout']);
+	const options = parseOptions(args, ['stdio', 'port', 'timeout', 'capture-output']);
 	const timeout = Number(first(options, 'timeout') ?? '300');
 	const port = Number(first(options, 'port') ?? '3001');
 	if (!Number.isFinite(timeout) || timeout <= 0) {
@@ -231,7 +231,7 @@ async function runServer(args: string[]): Promise<void> {
 	}
 
 	const createHandler = () => new DebuggingHandler(
-		new CliDebuggingExecutor(),
+		new CliDebuggingExecutor(flag(options, 'capture-output')),
 		new CliConfigurationManager(),
 		timeout
 	);

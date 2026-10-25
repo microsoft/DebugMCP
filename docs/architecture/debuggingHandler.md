@@ -1,5 +1,12 @@
 # DebuggingHandler
 
+## Output retrieval
+
+`handleGetDebugOutput` delegates filtered, session-scoped reads to the host's
+bounded output buffer without changing debugger state. The router and control
+server preserve session IDs, filters, and cursors when forwarding to the selected
+VS Code window. Capture-disabled and invalid-cursor errors remain explicit.
+
 ## Purpose
 
 Host-neutral orchestration layer that coordinates debugging operations between

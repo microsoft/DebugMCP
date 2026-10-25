@@ -2,6 +2,7 @@
 
 import * as vscode from 'vscode';
 import { logger } from './logger';
+import { DebugOutputBuffer } from './debugOutputBuffer';
 
 interface ISessionExecutionState {
 	defaultPaused?: boolean;
@@ -31,7 +32,7 @@ export class DebugSessionTracker implements vscode.Disposable {
 	private revision = 0;
 	private disposed = false;
 
-	constructor(api: DebugTrackerApi = vscode.debug) {
+	constructor(api: DebugTrackerApi = vscode.debug, public readonly output = new DebugOutputBuffer()) {
 		this.subscriptions = [
 			api.registerDebugAdapterTrackerFactory('*', {
 				createDebugAdapterTracker: session => {
@@ -45,6 +46,7 @@ export class DebugSessionTracker implements vscode.Disposable {
 						revision: ++this.revision
 					};
 					this.sessions.set(session.id, state);
+					this.output.startSession(session.id);
 					this.endedSessions.delete(session);
 					const end = () => {
 						if (this.sessions.get(session.id) === state) {
@@ -110,6 +112,7 @@ export class DebugSessionTracker implements vscode.Disposable {
 		this.disposed = true;
 		this.subscriptions.forEach(subscription => subscription.dispose());
 		this.sessions.clear();
+		this.output.clear();
 	}
 
 	private endSession(session: vscode.DebugSession): void {
@@ -120,6 +123,10 @@ export class DebugSessionTracker implements vscode.Disposable {
 
 	private observe(session: vscode.DebugSession, state: ISessionExecutionState, message: unknown): void {
 		if (!isRecord(message) || message.type !== 'event') {
+			return;
+		}
+		if (message.event === 'output') {
+			this.output.append(session.id, message.body);
 			return;
 		}
 		if (message.event === 'exited' || message.event === 'terminated') {

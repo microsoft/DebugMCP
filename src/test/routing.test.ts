@@ -36,6 +36,7 @@ class RecordingHandler implements IDebuggingHandler {
 	handleListVariableNames(args?: any) { return this.record('varNames', args ?? {}); }
 	handleEvaluateExpression(args: any) { return this.record('eval', args); }
 	handleGetDebugStatus(args?: any) { return this.record('status', args ?? {}); }
+	handleGetDebugOutput(args: any) { return this.record('output', args); }
 }
 
 suite('Multi-window routing', () => {
@@ -108,6 +109,18 @@ suite('Multi-window routing', () => {
 		assert.strictEqual(stepped, 'A:stepOver');
 		assert.strictEqual(vars, 'A:vars');
 		assert.deepStrictEqual(handlerA.calls.map(c => c.op), ['start', 'stepOver', 'vars']);
+	});
+
+	test('routes output retrieval to the same window and preserves filters and cursor (#178)', async () => {
+		const repoA = path.join(dir, 'repoA');
+		const handlerA = new RecordingHandler('A');
+		await startWindow('a.json', [repoA], handlerA);
+		await startWindow('b.json', [path.join(dir, 'repoB')], new RecordingHandler('B'));
+		const routing = new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir));
+		await routing.handleAddBreakpoint({ fileFullPath: path.join(repoA, 'm.py'), line: 1 });
+		const query = { sessionId: 'session', prefix: 'PROBE|', cursor: 'cursor', limit: 10 };
+		assert.strictEqual(await routing.handleGetDebugOutput(query), 'A:output');
+		assert.deepStrictEqual(handlerA.calls[1], { op: 'output', args: query });
 	});
 
 	test('add_breakpoint routes by fileFullPath before any start_debugging', async () => {
@@ -260,4 +273,3 @@ suite('Multi-window routing', () => {
 		);
 	});
 });
-

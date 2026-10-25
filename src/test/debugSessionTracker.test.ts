@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import * as assert from 'node:assert/strict';
 import { DebuggingExecutor } from '../debuggingExecutor';
 import { DebugSessionTracker } from '../utils/debugSessionTracker';
+import { DebugOutputBuffer } from '../utils/debugOutputBuffer';
 
 function createSession(id = 'issue-157'): vscode.DebugSession {
 	return {
@@ -23,7 +24,7 @@ class TrackerFixture implements vscode.Disposable {
 	public factory?: vscode.DebugAdapterTrackerFactory;
 	public registrations = 0;
 
-	constructor() {
+	constructor(output?: DebugOutputBuffer) {
 		this.tracker = new DebugSessionTracker({
 			registerDebugAdapterTrackerFactory: (type, factory) => {
 				assert.equal(type, '*');
@@ -39,7 +40,7 @@ class TrackerFixture implements vscode.Disposable {
 					subscription.dispose();
 				});
 			}
-		});
+		}, output);
 	}
 
 	public async attach(session: vscode.DebugSession): Promise<vscode.DebugAdapterTracker> {
@@ -67,6 +68,25 @@ suite('DAP execution tracking (#157)', () => {
 		fixture = new TrackerFixture();
 		session = createSession();
 		adapter = await fixture.attach(session);
+	});
+
+	suite('VS Code output capture (#178)', () => {
+		test('captures adapter output, retains bounded history after termination, and clears on disposal', async () => {
+			const output = new DebugOutputBuffer(() => true);
+			const fixture = new TrackerFixture(output);
+			const session = createSession();
+			try {
+				const adapter = await fixture.attach(session);
+				send(adapter, 'output', { output: 'PROBE|ms=123' });
+				send(adapter, 'terminated');
+				const query = { sessionId: session.id, prefix: 'PROBE|' };
+				assert.equal(output.read(query).entries[0].output, 'PROBE|ms=123');
+				fixture.dispose();
+				assert.throws(() => output.read(query), /No captured output session/);
+			} finally {
+				fixture.dispose();
+			}
+		});
 	});
 	teardown(() => fixture.dispose());
 

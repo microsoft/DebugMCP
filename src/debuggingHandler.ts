@@ -6,6 +6,7 @@ import { DebugState } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
+import { IDebugOutputQuery } from './utils/debugOutputBuffer';
 import {
     isSensitiveExpression,
     isSensitiveName,
@@ -36,6 +37,7 @@ export interface IDebuggingHandler {
     handleListVariableNames(args?: { scope?: 'local' | 'global' | 'all' }): Promise<string>;
     handleEvaluateExpression(args: { expression: string }): Promise<string>;
     handleGetDebugStatus(args?: { waitForPauseSeconds?: number }): Promise<string>;
+    handleGetDebugOutput(args: IDebugOutputQuery): Promise<string>;
     dispose?(): Promise<void> | void;
 }
 
@@ -79,6 +81,13 @@ export class DebuggingHandler implements IDebuggingHandler {
 
     public async dispose(): Promise<void> {
         await this.executor.dispose?.();
+    }
+
+    public async handleGetDebugOutput(args: IDebugOutputQuery): Promise<string> {
+        if (!this.executor.getDebugOutput) {
+            throw new Error('This debugging host does not support output capture.');
+        }
+        return JSON.stringify(this.executor.getDebugOutput(args));
     }
 
     /**
@@ -331,6 +340,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                     status: paused ? 'paused' : state.sessionActive ? 'running' : 'no-session',
                     paused,
                     sessionActive: state.sessionActive,
+                    sessionId: this.executor.getActiveSession()?.id,
                     configurationName: state.configurationName,
                     breakpoints: state.breakpoints,
                     requestedWaitSeconds: requestedSeconds,

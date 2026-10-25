@@ -123,6 +123,30 @@ be ready while the target remains running.
 `waitForDebugSessionReady()` accepts cancellation so a failed startup does not
 leave its readiness timeout and event subscriptions behind.
 
+### Opt-in output capture
+
+Both hosts feed DAP `output` events into `src/utils/debugOutputBuffer.ts`.
+The VS Code extension requires the machine-scoped user setting
+`debugmcp.captureDebugOutput`; the standalone CLI requires `serve --capture-output`.
+Both default to off. This is independent of execution-state tracking and never
+scrapes the Debug Console or requests variable values.
+
+`get_debug_status` exposes the active debug session ID. `get_debug_output` requires
+that ID and an explicit prefix or category filter; when both are supplied they
+are ANDed. Use the returned cursor with unchanged filters for incremental reads.
+Cursors are tied to a particular session incarnation and cannot cross sessions.
+Reads return at most 100 events and flag evicted history with `truncated`.
+
+Capture retains at most eight sessions, 1,000 events and 256 KiB of text per
+session. Individual events over 8 KiB are omitted with an explicit marker rather
+than partially retained. Bounded history survives termination until eviction or
+host disposal; changing the VS Code capture setting clears all history.
+Only console/stdout/stderr/important text is captured, not telemetry or arbitrary
+DAP event fields. Credential-shaped output and sensitive assignments are redacted
+before retention using the shared redaction helpers. Redaction is heuristic and
+event-local, not a guarantee against disclosure; enable capture only for trusted
+debug sessions. No output is persisted or logged.
+
 ### State Retrieval
 
 `getCurrentDebugState()` queries multiple VS Code APIs:

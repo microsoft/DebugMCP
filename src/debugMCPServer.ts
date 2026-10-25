@@ -265,6 +265,18 @@ export class DebugMCPServer {
         }, async (args: { fileFullPath: string; line: number; condition?: string }) =>
             this.runTool('add_breakpoint', () => debuggingHandler.handleAddBreakpoint(args)));
 
+        // Read captured output
+        server.registerTool('get_debug_output', {
+            description: 'Read bounded, redacted DAP output for one debug session. Capture must be enabled by the user before output is emitted. Obtain sessionId from get_debug_status. Provide a prefix or category; both filters are ANDed. Reuse nextCursor with the same filters for incremental reads; truncated reports evicted history. No Debug Console scraping.',
+            inputSchema: {
+                sessionId: z.string().min(1).max(512),
+                prefix: z.string().min(1).max(256).optional(),
+                category: z.enum(['console', 'stdout', 'stderr', 'important']).optional(),
+                cursor: z.string().max(128).optional(),
+                limit: z.number().int().min(1).max(100).optional(),
+            },
+        }, async args => this.runTool('get_debug_output', () => debuggingHandler.handleGetDebugOutput(args)));
+
         // Add logpoint tool
         server.registerTool('add_logpoint', {
             description: 'Add a logpoint: a breakpoint that logs a message instead of pausing execution. Ideal for tracing values across many iterations or hot paths without stopping, or where a hard pause would distort timing. Embed expressions in curly braces to interpolate runtime values, e.g. "user id={user.id}".',

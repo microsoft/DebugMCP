@@ -4,6 +4,7 @@ import * as http from 'http';
 import { IDebuggingHandler } from './debuggingHandler';
 import { WorkspaceRegistry, WindowRegistration } from './utils/workspaceRegistry';
 import { logger } from './utils/logger';
+import { IDebugOutputQuery } from './utils/debugOutputBuffer';
 
 /**
  * Router-window handler (one instance per MCP session) that forwards every
@@ -274,5 +275,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
 	public handleGetDebugStatus(args: { waitForPauseSeconds?: number } = {}): Promise<string> {
 		return this.forward('handleGetDebugStatus', args);
+	}
+
+	public handleGetDebugOutput(args: IDebugOutputQuery): Promise<string> {
+		return this.forward('handleGetDebugOutput', args);
 	}
 }
