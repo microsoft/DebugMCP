@@ -29,7 +29,7 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 | `nextLines` | `string[]` | Preview of upcoming lines |
 | `frameId` | `number \| null` | DAP frame identifier |
 | `threadId` | `number \| null` | DAP thread identifier |
-| `frameName` | `string \| null` | Current function/method name |
+| `frameName` | `string \| null` | Selected evaluation frame's function/method name |
 
 ## Key Methods
 
@@ -66,6 +66,9 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 - **Independent execution state**: A stopped target need not provide a stack frame,
   source path, or readable source. Explicit running state overrides stale frame IDs;
   missing frames are never replaced by fabricated identifiers.
+- **Consistent frame metadata**: Frame ID, name, and location refer to the selected
+  evaluation frame. The call stack remains in adapter order, so its first entry
+  can differ from the selected frame.
 - **Compatibility fallback**: Sessions that predate DAP observation use available
   frame/thread context to infer a pause. A selected thread alone is insufficient.
 - **Snapshot lifecycle**: Cloning preserves observed execution state; resetting

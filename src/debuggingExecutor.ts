@@ -408,17 +408,17 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 if (state.paused !== false && activeStackItem && 'frameId' in activeStackItem) {
                     state.updateContext(activeStackItem.frameId, activeStackItem.threadId);
 
-                    // Pull the current location from the debug adapter's top stack
+                    // Pull the current location from the debug adapter's selected stack
                     // frame (via stackTrace) instead of scraping the active text
                     // editor. VS Code updates the editor cursor/selection
                     // asynchronously after a stop and only for the focused editor,
                     // so reading it here was both racy (it lagged the actual stop)
                     // and wrong when focus was elsewhere — the source of stale
                     // "current line" reports. The DAP frame is ground truth.
-                    const topFrame = await this.extractFrameName(activeSession, activeStackItem.frameId, state);
+                    const selectedFrame = await this.extractFrameName(activeSession, activeStackItem.frameId, state);
 
-                    if (topFrame?.path && typeof topFrame.line === 'number') {
-                        await this.populateLocationFromFrame(state, topFrame.path, topFrame.line, numNextLines);
+                    if (selectedFrame?.path && typeof selectedFrame.line === 'number') {
+                        await this.populateLocationFromFrame(state, selectedFrame.path, selectedFrame.line, numNextLines);
                     }
                 }
 
@@ -467,9 +467,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     /**
      * Extract frame name and stack trace from the current debug session.
      *
-     * Returns the top frame's source location ({ path, line, column }) so the
-     * caller can report the authoritative current position without scraping the
-     * editor. Returns undefined if no stack frame is available.
+     * Returns the selected frame's source location ({ path, line, column }) so
+     * its metadata matches the evaluation context without scraping the editor.
+     * Returns undefined if the selected frame is not in the retrieved stack.
      */
     private async extractFrameName(
         session: vscode.DebugSession,
@@ -484,10 +484,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             });
 
             if (stackTraceResponse?.stackFrames && stackTraceResponse.stackFrames.length > 0) {
-                // Extract frame name from current frame
-                const currentFrame = stackTraceResponse.stackFrames[0];
-                state.updateFrameName(currentFrame.name || null);
-
                 // Build stack trace array
                 const stackTrace: StackFrame[] = stackTraceResponse.stackFrames.map((frame: any) => ({
                     name: frame.name || 'unknown',
@@ -498,8 +494,14 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
                 state.updateStackTrace(stackTrace);
 
+                const currentFrame = stackTraceResponse.stackFrames.find((frame: { id: number }) => frame.id === frameId);
+                if (!currentFrame) {
+                    return undefined;
+                }
+                state.updateFrameName(currentFrame.name || null);
+
                 // DAP line/column are 1-based (VS Code's default). Hand the raw
-                // top-frame location back to the caller for location reporting.
+                // selected-frame location back to the caller for location reporting.
                 return {
                     path: currentFrame.source?.path,
                     line: currentFrame.line,

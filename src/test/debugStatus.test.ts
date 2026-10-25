@@ -235,6 +235,8 @@ suite('VS Code executor source-independent status (#157)', () => {
 	let source: { path?: string; name?: string; sourceReference?: number } | undefined;
 	let rejectStackTrace: boolean;
 	let duringStackTrace: (() => void) | undefined;
+	let callerSelected: boolean;
+	let omitSelectedFrame: boolean;
 	let active: boolean;
 
 	setup(() => {
@@ -243,6 +245,8 @@ suite('VS Code executor source-independent status (#157)', () => {
 		source = undefined;
 		rejectStackTrace = false;
 		duringStackTrace = undefined;
+		callerSelected = false;
+		omitSelectedFrame = false;
 		active = true;
 		session = {
 			id: 'issue-157',
@@ -256,7 +260,11 @@ suite('VS Code executor source-independent status (#157)', () => {
 				if (rejectStackTrace) {
 					throw new Error('stack unavailable');
 				}
-				return { stackFrames: [{ id: 0, name: 'main', line: 1, column: 1, source }] };
+				const stackFrames = [{ id: 0, name: 'main', line: 1, column: 1, source }];
+				if (callerSelected && !omitSelectedFrame) {
+					stackFrames.push({ id: 7, name: 'caller', line: 2, column: 1, source: { path: __filename } });
+				}
+				return { stackFrames };
 			},
 			getDebugProtocolBreakpoint: async () => undefined
 		};
@@ -293,6 +301,33 @@ suite('VS Code executor source-independent status (#157)', () => {
 		assert.equal(result.status, 'paused');
 		assert.equal(result.state.currentLine, 1);
 		assert.equal(result.state.frameId, 0);
+	});
+
+	test('selected caller metadata matches its frame ID rather than the top frame (#179)', async () => {
+		source = { path: path.join(__dirname, 'stopped.c') };
+		callerSelected = true;
+		stackItem = { frameId: 7, threadId: 1, session };
+		const state = await new DebuggingExecutor().getCurrentDebugState();
+		assert.equal(state.frameId, 7);
+		assert.equal(state.frameName, 'caller');
+		assert.equal(state.fileFullPath, __filename);
+		assert.equal(state.currentLine, 2);
+		assert.equal(state.stackTrace[0].name, 'main');
+		assert.equal(state.stackTrace[1].name, 'caller');
+	});
+
+	test('missing selected frame never borrows top-frame metadata (#179)', async () => {
+		source = { path: __filename };
+		callerSelected = true;
+		omitSelectedFrame = true;
+		stackItem = { frameId: 7, threadId: 1, session };
+		const state = await new DebuggingExecutor().getCurrentDebugState();
+		assert.equal(state.isPaused(), true);
+		assert.equal(state.frameId, 7);
+		assert.equal(state.frameName, null);
+		assert.equal(state.fileFullPath, null);
+		assert.equal(state.currentLine, null);
+		assert.equal(state.stackTrace[0].name, 'main');
 	});
 
 	test('a selected thread is not mistaken for a stopped frame', async () => {
