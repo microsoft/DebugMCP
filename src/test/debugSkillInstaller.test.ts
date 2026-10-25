@@ -31,6 +31,13 @@ suite('debug-live skill installer', () => {
 		]);
 	});
 
+	test('fresh remote homes still get the cross-agent target without Copilot configuration (#174)', () => {
+		const home = path.join(directory, 'fresh-remote-home');
+		assert.deepStrictEqual(getDebugSkillInstallTargets(home, path.join(home, '.copilot')), [
+			path.join(home, '.agents', 'skills', 'debug-live')
+		]);
+	});
+
 	test('copies the complete skill and removes legacy names', async () => {
 		const source = path.join(directory, 'bundled', 'debug-live');
 		const destination = path.join(directory, 'home', '.agents', 'skills', 'debug-live');
@@ -57,6 +64,13 @@ suite('debug-live skill installer', () => {
 		);
 		assert.strictEqual(fs.existsSync(path.join(skillsDirectory, 'debug')), false);
 		assert.strictEqual(fs.existsSync(path.join(skillsDirectory, 'really-debug')), false);
+
+		await fs.promises.writeFile(path.join(source, 'SKILL.md'), '# Updated debug live\n', 'utf8');
+		await installDebugSkill(source, destination);
+		assert.strictEqual(
+			await fs.promises.readFile(path.join(destination, 'SKILL.md'), 'utf8'),
+			'# Updated debug live\n'
+		);
 	});
 
 	test('rejects a package without the skill entry point', async () => {
