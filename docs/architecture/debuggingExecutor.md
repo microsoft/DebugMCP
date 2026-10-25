@@ -140,7 +140,14 @@ Unobserved sessions retain the frame-based fallback; a selected thread alone doe
 not establish a pause.
 
 `src/utils/debugSessionTracker.ts` is a read-only observer of standard DAP
-`stopped`, `continued`, `exited`, and `terminated` events. It tracks sessions and
+`stopped`, `continued`, `exited`, and `terminated` events and correlated successful
+resume responses. Adapters need not emit `continued` for client-requested
+execution. The tracker records outbound resume requests and clears paused state
+only on their successful matching responses, respecting thread-specific resumes.
+Failed or unrelated responses do not resume execution. Stops newer than the
+request remain observable even if they arrive before its response. Pending
+request correlation is bounded and is discarded with the session.
+It tracks sessions and
 thread-specific versus all-thread transitions separately. A selected thread uses
 its observed state; without a selected thread, any known stop establishes paused
 status. Activation creates one tracker and owns its disposal; test-created
