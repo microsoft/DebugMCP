@@ -13,6 +13,7 @@ import {
 } from '../debuggingExecutor';
 import { CliDebugConfiguration } from './cliConfigurationManager';
 import { DapClient } from './dapClient';
+import { DebugOutputBuffer, IDebugOutputQuery } from '../utils/debugOutputBuffer';
 
 type SessionState = 'none' | 'starting' | 'running' | 'stopped' | 'terminated';
 type ReadyState = 'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached';
@@ -29,6 +30,15 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 	private initialized = false;
 	private stateRevision = 0;
 	private stopSequence = 0;
+	private readonly output: DebugOutputBuffer;
+
+	constructor(captureOutput = false) {
+		this.output = new DebugOutputBuffer(() => captureOutput);
+	}
+
+	public getDebugOutput(query: IDebugOutputQuery): ReturnType<DebugOutputBuffer['read']> {
+		return this.output.read(query);
+	}
 
 	public async startDebugging(
 		workingDirectory: string,
@@ -63,6 +73,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 			type: cliConfig.type ?? cliConfig.adapter.type,
 			request: cliConfig.request
 		};
+		this.output.startSession(this.session.id);
 		this.emitState();
 
 		const client = new DapClient(
@@ -141,6 +152,7 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 	}
 
 	public async dispose(): Promise<void> {
+		this.output.clear();
 		const client = this.client;
 		this.initialized = false;
 		this.client = undefined;
@@ -374,6 +386,12 @@ export class CliDebuggingExecutor implements IDebuggingExecutor {
 	}
 
 	private registerClientEvents(client: DapClient): void {
+		const sessionId = this.session?.id;
+		client.on('output', body => {
+			if (sessionId && this.client === client) {
+				this.output.append(sessionId, body);
+			}
+		});
 		client.on('stopped', body => {
 			this.stopSequence++;
 			this.threadId = typeof body.threadId === 'number' ? body.threadId : this.threadId;

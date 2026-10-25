@@ -7,6 +7,7 @@ import { logger } from './utils/logger';
 import { withTimeout } from './utils/withTimeout';
 import { getDebugStartupContext, startDebuggingWithDiagnostics } from './utils/debugStartup';
 import { DebugSessionTracker } from './utils/debugSessionTracker';
+import { DebugOutputBuffer, IDebugOutputQuery } from './utils/debugOutputBuffer';
 
 /**
  * Outcome of dispatching `testing.debugAtCursor`.
@@ -51,6 +52,7 @@ export interface IDebuggingExecutor {
     hasActiveSession(): Promise<boolean>;
     getActiveSession(): DebugSessionInfo | undefined;
     getActiveFrameId?(): number | undefined;
+    getDebugOutput?(query: IDebugOutputQuery): ReturnType<DebugOutputBuffer['read']>;
     waitForDebugSessionReady(timeoutMs: number, signal?: AbortSignal): Promise<'stopped' | 'terminated' | 'timeout' | 'no-session' | 'attached'>;
     dispose?(): Promise<void> | void;
 }
@@ -65,6 +67,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     private static readonly DAP_REQUEST_TIMEOUT_MS = 30_000;
 
     constructor(private readonly sessionTracker?: DebugSessionTracker) {}
+
+    public getDebugOutput(query: IDebugOutputQuery): ReturnType<DebugOutputBuffer['read']> {
+        if (!this.sessionTracker) {
+            throw new Error('Debug output capture is not configured for this executor.');
+        }
+        return this.sessionTracker.output.read(query);
+    }
 
     /**
      * Issue a DAP request with an upper time bound, rejecting if the adapter

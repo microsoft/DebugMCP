@@ -1,5 +1,14 @@
 # DebugMCPServer
 
+## Session output
+
+`get_debug_output` provides read-only, bounded access to explicitly opted-in DAP
+output in both the VS Code and standalone hosts. It requires a debug session ID
+(from `get_debug_status`) and a prefix or category filter, and returns an
+incremental session-bound cursor. Capture is disabled by default and cannot be
+enabled through this tool. See the executor documentation for opt-in controls,
+retention bounds, and redaction limitations.
+
 ## Purpose
 
 The MCP server component that exposes debugging capabilities to AI agents via

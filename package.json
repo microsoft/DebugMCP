@@ -90,6 +90,12 @@
     "configuration": {
       "title": "DebugMCP",
       "properties": {
+        "debugmcp.captureDebugOutput": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Opt in to bounded, in-memory DAP output capture for `get_debug_output`. Output may contain sensitive data; credential redaction is heuristic, not a guarantee. Changing this setting clears captured output."
+        },
         "debugmcp.timeoutInSeconds": {
           "type": "number",
           "default": 300,

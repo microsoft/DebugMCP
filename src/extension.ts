@@ -10,6 +10,7 @@ import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import { WorkspaceRegistry } from './utils/workspaceRegistry';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { DebugSessionTracker } from './utils/debugSessionTracker';
+import { DebugOutputBuffer } from './utils/debugOutputBuffer';
 import { logger, LogLevel } from './utils/logger';
 
 let mcpServer: DebugMCPServer | null = null;
@@ -32,8 +33,15 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.logSystemInfo(`VS Code ${vscode.version}`);
     logger.logEnvironment();
 
-    const debugSessionTracker = new DebugSessionTracker();
+    const debugOutput = new DebugOutputBuffer(() =>
+        vscode.workspace.getConfiguration('debugmcp').get<boolean>('captureDebugOutput', false));
+    const debugSessionTracker = new DebugSessionTracker(vscode.debug, debugOutput);
     context.subscriptions.push(debugSessionTracker);
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('debugmcp.captureDebugOutput')) {
+            debugOutput.clear();
+        }
+    }));
 
     const config = vscode.workspace.getConfiguration('debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 180);

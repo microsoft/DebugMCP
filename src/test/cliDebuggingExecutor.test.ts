@@ -67,6 +67,10 @@ suite('CLI debugging executor', () => {
 			case 'recordedUpdates':
 				respond(request, { updates });
 				break;
+			case 'emitOutput':
+				send({ type: 'event', event: 'output', body: request.arguments });
+				respond(request);
+				break;
 			case 'finish':
 				respond(request);
 				if (request.arguments.event === 'exit') {
@@ -183,6 +187,28 @@ suite('CLI debugging executor', () => {
 				{ ...update([]), breakpoints: [{ line: 1, condition: 'count > 2', logMessage: 'count={count}' }] },
 				update([]), update([2]), update([])
 			]);
+		});
+
+		test('captures real DAP output only with user opt-in and clears on disposal (#178)', async () => {
+			executor = new CliDebuggingExecutor(true);
+			await executor.startDebugging(directory, config);
+			const client = executor['client']!;
+			await client.request('emitOutput', { output: 'PROBE|ms=123', category: 'stdout' });
+			const sessionId = executor.getActiveSession()!.id;
+			const query = { sessionId, prefix: 'PROBE|' };
+			assert.strictEqual(executor.getDebugOutput(query).entries[0].output, 'PROBE|ms=123');
+			await executor.stopDebugging();
+			assert.strictEqual(executor.getDebugOutput(query).entries.length, 1);
+			await executor.dispose();
+			assert.throws(() => executor.getDebugOutput(query), /No captured output session/);
+		});
+
+		test('default CLI sessions do not expose output (#178)', async () => {
+			await executor.startDebugging(directory, config);
+			await executor['client']!.request('emitOutput', { output: 'PROBE|ms=123' });
+			assert.throws(() => executor.getDebugOutput({
+				sessionId: executor.getActiveSession()!.id, prefix: 'PROBE|'
+			}), /disabled/);
 		});
 	});
 
