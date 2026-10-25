@@ -132,6 +132,11 @@ leave its readiness timeout and event subscriptions behind.
 - DAP `stackTrace` request - Frame name, call stack, and source location
 - Source document lookup - Optional line contents and lookahead
 
+Frame ID, name, and source location describe the selected evaluation frame, not
+necessarily the physical stop at the top of the stack. The call stack retains
+adapter order. If the selected frame is absent from the bounded stack response,
+its name and source remain unavailable rather than borrowing top-frame metadata.
+
 Frame/thread context is populated before source lookup. A missing or unreadable
 source does not discard that context or mean that execution is running. Paused
 status is also independent of frames: an observed stop with an empty stack still
